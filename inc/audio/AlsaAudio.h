@@ -15,7 +15,6 @@
 
 #include <alsa/asoundlib.h>
 
-#include <iostream>
 #include <system_error>
 
 

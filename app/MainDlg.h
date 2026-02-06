@@ -64,14 +64,14 @@ private:
     std::string GetAutoStartConfig() const;
 
 protected:
-    // implemenation of IRaopEvents
+    // implementation of IRaopEvents
     void OnCreateRaopService(bool success) noexcept override;
     void OnSetCurrentDacpID(DacpID&& dacpID) noexcept override;
     void OnSetCurrentDmapInfo(DmapInfo&& dmapInfo) noexcept override;
     void OnSetCurrentImage(const char* data, size_t dataLen, std::string&& imageType) noexcept override;
 
 protected:
-    // implemenation of IDnsSDEvents
+    // implementation of IDnsSDEvents
     void OnDNSServiceBrowseReply(
         bool registered,
         uint32_t interfaceIndex,

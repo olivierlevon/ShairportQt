@@ -17,6 +17,8 @@ TimeLabel::TimeLabel(const SharedPtr<IValueCollection>& config, const QString& l
 
 QString TimeLabel::FormatTimeInfo(int t, const string prefix /*= {}*/)
 {
+    if (t < 0) t = 0;
+
     stringstream ss;
 
     if (!prefix.empty())

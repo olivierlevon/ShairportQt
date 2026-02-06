@@ -21,19 +21,19 @@ PACKAGE="shairport-qt_${VERSION}_${ARCH}"
 
 echo "About to (re)create ${PACKAGE}"
 
-rm -rvf ${PACKAGE}
+rm -rvf "${PACKAGE}"
 
-mkdir -vp ${PACKAGE}/DEBIAN
-cp -vf debian/control ${PACKAGE}/DEBIAN/control
+mkdir -vp "${PACKAGE}/DEBIAN"
+cp -vf debian/control "${PACKAGE}/DEBIAN/control"
 
-sed -i "s/^Version:.*/Version: ${VERSION}/" ${PACKAGE}/DEBIAN/control
-sed -i "s/^Architecture:.*/Architecture: ${ARCH}/" ${PACKAGE}/DEBIAN/control
+sed -i "s/^Version:.*/Version: ${VERSION}/" "${PACKAGE}/DEBIAN/control"
+sed -i "s/^Architecture:.*/Architecture: ${ARCH}/" "${PACKAGE}/DEBIAN/control"
 
-install -vD build/ShairportQt ${PACKAGE}/usr/bin/ShairportQt
-install -vD debian/ShairportQt.desktop ${PACKAGE}/usr/share/applications/org.shairport.ShairportQt.desktop
-install -vDm644 res/ShairportQt.png ${PACKAGE}/usr/share/icons/hicolor/256x256/apps/org.shairport.ShairportQt.png
+install -vD build/ShairportQt "${PACKAGE}/usr/bin/ShairportQt"
+install -vD debian/ShairportQt.desktop "${PACKAGE}/usr/share/applications/org.shairport.ShairportQt.desktop"
+install -vDm644 res/ShairportQt.png "${PACKAGE}/usr/share/icons/hicolor/256x256/apps/org.shairport.ShairportQt.png"
 
-SIZE=$(du -sk ${PACKAGE} | cut -f1)
-sed -i "s/^Installed-Size:.*\Installed-Size: ${SIZE}" ${PACKAGE}/DEBIAN/control
+SIZE=$(du -sk "${PACKAGE}" | cut -f1)
+sed -i "s/^Installed-Size:.*/Installed-Size: ${SIZE}/" "${PACKAGE}/DEBIAN/control"
 
-dpkg-deb --build --root-owner-group ${PACKAGE}
+dpkg-deb --build --root-owner-group "${PACKAGE}"

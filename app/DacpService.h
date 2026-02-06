@@ -30,7 +30,7 @@ public:
     void Resolve();
 
 protected:
-    // implemenation of IDnsSDEvents
+    // implementation of IDnsSDEvents
     void OnServiceResolved(
         const unsigned char* txtRecord,
         uint16_t txtLen,

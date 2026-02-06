@@ -48,7 +48,7 @@ T CopyToLower(const T& s)
     T t(s);
     std::transform(t.begin(), t.end(), t.begin(), [](typename T::value_type c) -> typename T::value_type
         {
-            return std::tolower(c);
+            return static_cast<typename T::value_type>(std::tolower(static_cast<unsigned char>(c)));
         });
     return t;
 }
@@ -59,7 +59,7 @@ T CopyToUpper(const T& s)
     T t(s);
     std::transform(t.begin(), t.end(), t.begin(), [](typename T::value_type c) -> typename T::value_type
         {
-            return std::toupper(c);
+            return static_cast<typename T::value_type>(std::toupper(static_cast<unsigned char>(c)));
         });
     return t;
 }
@@ -69,7 +69,7 @@ T ToLower(T&& s)
 {
     std::transform(s.begin(), s.end(), s.begin(), [](typename T::value_type c) -> typename T::value_type
         {
-            return std::tolower(c);
+            return static_cast<typename T::value_type>(std::tolower(static_cast<unsigned char>(c)));
         });
     return s;
 }
@@ -79,13 +79,13 @@ T ToUpper(T&& s)
 {
     std::transform(s.begin(), s.end(), s.begin(), [](typename T::value_type c) -> typename T::value_type
         {
-            return std::toupper(c);
+            return static_cast<typename T::value_type>(std::toupper(static_cast<unsigned char>(c)));
         });
     return s;
 }
 
-template<class _Pr>
-bool ParseRegEx(const std::string& strToParse, const std::string& strRegExp, _Pr _Pred)
+template<class Pr>
+bool ParseRegEx(const std::string& strToParse, const std::string& strRegExp, Pr pred)
 {
     const std::regex e(strRegExp);
 
@@ -96,7 +96,7 @@ bool ParseRegEx(const std::string& strToParse, const std::string& strRegExp, _Pr
     {
         do
         {
-            if (!_Pred(*i))
+            if (!pred(*i))
             {
                 break;
             }

@@ -268,11 +268,13 @@ void SuspendInhibitor::Inhibit(bool enable, const char* strApplication /*= nullp
 		if (enable)
 		{
 			const string strName = string(strApplication) + " "s + string(strReason);
-			CFStringRef name = CFSTR(strName.c_str());
+			CFStringRef name = CFStringCreateWithCString(kCFAllocatorDefault, strName.c_str(), kCFStringEncodingUTF8);
 
-			if (IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep,
+			IOReturn ioResult = IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep,
 				kIOPMAssertionLevelOn, name,
-				&m_powerAssertion) != kIOReturnSuccess)
+				&m_powerAssertion);
+			CFRelease(name);
+			if (ioResult != kIOReturnSuccess)
 			{
 				m_powerAssertion = kIOPMNullAssertionID;
 			}

@@ -232,7 +232,7 @@ void MainDlg::RunScheduler() noexcept
                             if (hasPlayingState)
                             {
                                 hasPlayingState = false;
-                                SetPlayState(false);
+                                emit SetPlayState(false);
                             }
                         }
                         catch (...)
@@ -295,17 +295,22 @@ void MainDlg::RunScheduler() noexcept
                 assert(!sync.owns_lock());
 
                 // any toast message pending?
-                if (m_timePointShowToastMessage)
                 {
                     const auto tp = std::chrono::steady_clock::now();
+                    bool showToast = false;
 
-                    unique_lock<recursive_mutex> syncTitleInfo(m_mtxTitleInfo);
-
-                    if (m_timePointShowToastMessage && tp >= *m_timePointShowToastMessage)
                     {
-                        m_timePointShowToastMessage.reset();
-                        syncTitleInfo.unlock();
-                        ShowToastMessage();
+                        unique_lock<recursive_mutex> syncTitleInfo(m_mtxTitleInfo);
+
+                        if (m_timePointShowToastMessage && tp >= *m_timePointShowToastMessage)
+                        {
+                            m_timePointShowToastMessage.reset();
+                            showToast = true;
+                        }
+                    }
+                    if (showToast)
+                    {
+                        emit ShowToastMessage();
                     }
                 }
 
@@ -685,14 +690,20 @@ void MainDlg::ConfigureDacpBrowser()
     const bool enabled = !VariantValue::Key("NoMediaControl").TryGet<bool>(m_config).value_or(false);
 
     DnsHandlePtr dacpBrowser;
+    bool hasBrowser;
 
-    if (enabled && !m_dacpBrowser)
+    {
+        const lock_guard<mutex> guard(m_mtx);
+        hasBrowser = static_cast<bool>(m_dacpBrowser);
+    }
+
+    if (enabled && !hasBrowser)
     {
         dacpBrowser = m_dnsSD->BrowseForService("_dacp._tcp", this);
 
         if (!dacpBrowser->Succeeded())
         {
-            spdlog::error("Main Dialog: failed to start DACP Browser with code: ", m_dacpBrowser->ErrorCode());
+            spdlog::error("Main Dialog: failed to start DACP Browser with code: {}", dacpBrowser->ErrorCode());
 
             if (!m_isHidden)
             {
@@ -707,7 +718,7 @@ void MainDlg::ConfigureDacpBrowser()
             dacpBrowser.swap(m_dacpBrowser);
         }
     }
-    else if (!enabled && m_dacpBrowser)
+    else if (!enabled && hasBrowser)
     {
         map<uint64_t, DacpServicePtr> mapDacpService;
 
@@ -720,7 +731,7 @@ void MainDlg::ConfigureDacpBrowser()
         mapDacpService.clear();
         spdlog::info("Main Dialog: stopped DACP Browser");
 
-        OnUpdateMMState();
+        emit UpdateMMState();
     }
 }
 
@@ -826,7 +837,7 @@ void MainDlg::SendDacpCommand(const string& cmd)
                                 }
                                 catch (const exception& e)
                                 {
-                                    spdlog::error("failed to emit UpdateMMState: ", e.what());
+                                    spdlog::error("failed to emit UpdateMMState: {}", e.what());
                                 }
                             }
                         }
@@ -839,13 +850,13 @@ void MainDlg::SendDacpCommand(const string& cmd)
             }
             catch (const exception& e)
             {
-                spdlog::error("Main Dialog: failed to SendDacpDommand({}): {}", cmd, e.what());
+                spdlog::error("Main Dialog: failed to SendDacpCommand({}): {}", cmd, e.what());
             }
         }
     }
     else
     {
-        spdlog::info("Main Dialog: could not SendDacpDommand({}): found no remote DACP server for ID {}", cmd, m_currentDacpID.id);
+        spdlog::info("Main Dialog: could not SendDacpCommand({}): found no remote DACP server for ID {}", cmd, m_currentDacpID.id);
     }
 }
 
@@ -865,13 +876,20 @@ void MainDlg::OnCreateRaopService(bool success) noexcept
             }
             catch (const exception& e)
             {
-                spdlog::error("failed to emit TROUBLE_SHOOT_RAOP_SERVICE: ", e.what());
+                spdlog::error("failed to emit TROUBLE_SHOOT_RAOP_SERVICE: {}", e.what());
             }
         }
     }
     else
     {
-        ShowStatus(GetString(StringID::STATUS_READY));
+        try
+        {
+            emit ShowStatus(GetString(StringID::STATUS_READY));
+        }
+        catch (const exception& e)
+        {
+            spdlog::error("failed to emit STATUS_READY: {}", e.what());
+        }
     }
     spdlog::debug("Main Dialog: RAOP Service created: {}", success);
 }
@@ -923,7 +941,7 @@ void MainDlg::OnSetCurrentImage(const char* data, size_t dataLen, string&& image
         if (timePointShowAlbumArt == 0)
         {
             // call Qt slot immediately, if we have a real album art image
-            ShowAlbumArt();
+            emit ShowAlbumArt();
         }
     }
     catch (const exception& e)
@@ -957,7 +975,7 @@ void MainDlg::OnSetCurrentDacpID(DacpID&& dacpID) noexcept
         }
         catch (const exception& e)
         {
-            spdlog::error("failed to emit UpdateMMState: ", e.what());
+            spdlog::error("failed to emit UpdateMMState: {}", e.what());
         }
     }
 }
@@ -982,7 +1000,7 @@ void MainDlg::OnDNSServiceBrowseReply(
                 string	regType{ regtype ? regtype : ""s };
                 string	replyDomain{ replydomain ? replydomain : ""s };
 
-                spdlog::info("Main Dialog: OnDNSServiceBrowseReply registered: {}.{}{}"s, serviceName, regType, replydomain);
+                spdlog::info("Main Dialog: OnDNSServiceBrowseReply registered: {}.{}{}"s, serviceName, regType, replyDomain);
 
                 // try to lookup an existing entry
                 DacpServicePtr dacpService;
@@ -1030,7 +1048,7 @@ void MainDlg::OnDNSServiceBrowseReply(
                             }
                             catch (const exception& e)
                             {
-                                spdlog::error("failed to emit UpdateMMState: ", e.what());
+                                spdlog::error("failed to emit UpdateMMState: {}", e.what());
                             }
                         }
                     }
@@ -1067,7 +1085,7 @@ void MainDlg::OnDNSServiceBrowseReply(
                                 }
                                 catch (const exception& e)
                                 {
-                                    spdlog::error("failed to emit UpdateMMState: ", e.what());
+                                    spdlog::error("failed to emit UpdateMMState: {}", e.what());
                                 }
                             }
                         }
@@ -1339,7 +1357,7 @@ void MainDlg::OnAlbumArt()
             return;
         }
     }
-    assert(item);
+    if (!item) return;
 
     try
     {
@@ -1397,12 +1415,12 @@ void MainDlg::OnUpdateWidgets()
     }
     else
     {
-        const QString emtpy;
-        m_buttonPreviousTrack->setToolTip(emtpy);
-        m_buttonNextTrack->setToolTip(emtpy);
-        m_buttonVolumeDown->setToolTip(emtpy);
-        m_buttonVolumeUp->setToolTip(emtpy);
-        m_buttonPlayPauseTrack->setToolTip(emtpy);
+        const QString empty;
+        m_buttonPreviousTrack->setToolTip(empty);
+        m_buttonNextTrack->setToolTip(empty);
+        m_buttonVolumeDown->setToolTip(empty);
+        m_buttonVolumeUp->setToolTip(empty);
+        m_buttonPlayPauseTrack->setToolTip(empty);
     }
     m_editNameAirport->setText(VariantValue::Key("APname").Get<string>(m_config).c_str());
     m_editPasswordAirport->setText(VariantValue::Key("Password").Get<string>(m_config).c_str());
@@ -1464,7 +1482,7 @@ void MainDlg::OnQuit()
     close();
 }
 
-// Widget override: the dialog is closing -> end/shtutdown
+// Widget override: the dialog is closing -> end/shutdown
 void MainDlg::closeEvent(QCloseEvent* event)
 {
     {
@@ -1475,11 +1493,18 @@ void MainDlg::closeEvent(QCloseEvent* event)
             });
 
         // is Dacp available?
-        if (m_currentDacpID.id)
         {
-            // by chance ... try to convince the AirPlay sender
-            // to stop playing via Dacp
-            SendDacpCommand("stop"s);
+            bool hasDacp = false;
+            {
+                const lock_guard<mutex> guard(m_mtx);
+                hasDacp = m_currentDacpID.id != 0;
+            }
+            if (hasDacp)
+            {
+                // by chance ... try to convince the AirPlay sender
+                // to stop playing via Dacp
+                SendDacpCommand("stop"s);
+            }
         }
 
         if (m_systemTray)
@@ -1618,7 +1643,7 @@ void MainDlg::OnKeyPressed(KeyboardHook::Key key) noexcept
     }
     catch (...)
     {
-        spdlog::error("OnKeyPressed: failed to send DACP command for key", (int)key);
+        spdlog::error("OnKeyPressed: failed to send DACP command for key {}", (int)key);
     }
 }
 
@@ -1642,7 +1667,7 @@ void MainDlg::OnAbout()
     labelPixmap->setPixmap(pixmap.scaled(64, 64));
 
     // search for regular expression "1[., ]+0[., ]+0[., ]+3"
-    QPointer<QLabel> versionLabel = new QLabel(tr("<p><a href=\"https://github.com/Frank-Friemel/ShairportQt\">ShairportQt</a> 1.0.0.3</p>"));
+    QPointer<QLabel> versionLabel = new QLabel(tr("<p><a href=\"https://github.com/Frank-Friemel/ShairportQt\">ShairportQt</a> 1.0.0.5</p>"));
 
     dlg->connect(versionLabel, &QLabel::linkActivated, [](QString link)
         {
@@ -1835,7 +1860,8 @@ void MainDlg::OnChangeAirport()
             if (newAutostart)
             {
                 char filePath[MAX_PATH]{};
-                if (0 == ::GetModuleFileNameA(NULL, filePath, sizeof(filePath)))
+                const auto pathLen = ::GetModuleFileNameA(NULL, filePath, sizeof(filePath));
+                if (pathLen == 0 || pathLen >= sizeof(filePath))
                 {
                     throw runtime_error("could not get file path");
                 }
@@ -1867,10 +1893,10 @@ void MainDlg::OnChangeAirport()
             if (newApName != apName || newHasPassword != hasPassword || (hasPassword && newPassword != password))
             {
                 // restart the RAOP service
-                ShowMessage(StringID::RECONFIG_RAOP_SERVICE);
+                emit ShowMessage(StringID::RECONFIG_RAOP_SERVICE);
             }
         }
-        UpdateWidgets();
+        emit UpdateWidgets();
     }
     else
     {
@@ -1996,7 +2022,7 @@ void MainDlg::OnOptions()
             VariantValue::Key("AudioDevice").Set(m_config, newAudioDevice);
 
             // restart the RAOP service
-            ShowMessage(StringID::RECONFIG_RAOP_SERVICE);
+            emit ShowMessage(StringID::RECONFIG_RAOP_SERVICE);
         }
     }
     else

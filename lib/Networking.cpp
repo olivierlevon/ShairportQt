@@ -30,7 +30,7 @@ namespace Networking
 
 		// Initialize Winsock
 		const int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-		
+
 		if (result != 0)
 		{
 			throw runtime_error("WSAStartup failed");
@@ -38,12 +38,12 @@ namespace Networking
 #endif
 	}
 
-    int CreateSocket(bool stream /*= true*/, bool bV4 /*= true*/) noexcept
+    socket_t CreateSocket(bool stream /*= true*/, bool bV4 /*= true*/) noexcept
     {
         return ::socket(bV4 ? AF_INET : AF_INET6, stream ? SOCK_STREAM : SOCK_DGRAM, 0);
     }
 
-    void DestroySocket(int sd) noexcept
+    void DestroySocket(socket_t sd) noexcept
     {
     #ifdef _WIN32
         if (0 != ::closesocket(sd))
@@ -58,9 +58,9 @@ namespace Networking
     #endif
     }
 
-    bool SetSocketBlockingEnabled(int sd, bool blocking) noexcept
+    bool SetSocketBlockingEnabled(socket_t sd, bool blocking) noexcept
     {
-        if (sd < 0)
+        if (sd == invalid_socket)
         {
             return false;
         }
@@ -79,25 +79,28 @@ namespace Networking
 #endif
     }
 
-    int WaitForIncomingData(int sd, unsigned int ms /*= 0xffffffff*/) noexcept
+    int WaitForIncomingData(socket_t sd, unsigned int ms /*= 0xffffffff*/) noexcept
     {
+#ifndef _WIN32
+        if (sd < 0 || sd >= FD_SETSIZE) return -1;
+#endif
         fd_set read_fds;
         FD_ZERO(&read_fds);
         FD_SET(sd, &read_fds);
 
         if (ms == 0xffffffff)
         {
-            return ::select(sd + 1, &read_fds, NULL, NULL, NULL);
+            return ::select(static_cast<int>(sd + 1), &read_fds, NULL, NULL, NULL);
         }
         struct timeval tv{};
 
         tv.tv_sec = ms / 1000;
         tv.tv_usec = (ms - (tv.tv_sec * 1000)) * 1000;
 
-        return ::select(sd + 1, &read_fds, NULL, NULL, &tv);
+        return ::select(static_cast<int>(sd + 1), &read_fds, NULL, NULL, &tv);
     }
 
-    int Read(int sd, unsigned char* buffer, unsigned int size) noexcept
+    int Read(socket_t sd, unsigned char* buffer, unsigned int size) noexcept
     {
         return ::recv(sd,
 #ifdef _WIN32
@@ -108,7 +111,7 @@ namespace Networking
             0);
     }
 
-    std::string GetPeerIP(int sd) noexcept
+    std::string GetPeerIP(socket_t sd) noexcept
     {
         std::string result;
 

@@ -7,7 +7,7 @@
 #include "Networking.h"
 
 static uint8_t TxtLen(const char* txt);
-static char* DnsParseDomainName(char* p, char** x) noexcept;
+static char* DnsParseDomainName(char* p, char* pEnd, char** x) noexcept;
 
 #ifndef _WIN32
 // LoadLibrary for Unix -> dlXXXX
@@ -52,7 +52,7 @@ private:
                                                     void*                               context       /* may be NULL */
                                                 );
     typedef void (DNSSD_API *_typeDNSServiceRefDeallocate)(DNSServiceRef sdRef);
-    typedef int (DNSSD_API *_typeDNSServiceRefSockFD)(DNSServiceRef sdRef);
+    typedef dnssd_sock_t (DNSSD_API *_typeDNSServiceRefSockFD)(DNSServiceRef sdRef);
 	typedef DNSServiceErrorType (DNSSD_API *_typeDNSServiceProcessResult)(DNSServiceRef sdRef);
 	typedef DNSServiceErrorType (DNSSD_API *_typeDNSServiceQueryRecord)
 												(
@@ -409,7 +409,7 @@ static void DNSSD_API MyDNSServiceQueryRecordReply
             memcpy(rd, rdata, rdlen);
 
             char* x = rd + 3 * sizeof(uint16_t);
-            char* name = DnsParseDomainName(x, &x);
+            char* name = DnsParseDomainName(rd, rd + rdlen, &x);
 
             if (name)
             {
@@ -460,11 +460,11 @@ void DnsSDHandle::Init(void* h, int32_t e)
     {
         m_processResult = async(launch::async, [this]() -> void
             {
-                int socket = m_dnsSD->m_descriptor->m_funcDNSServiceRefSockFD(static_cast<DNSServiceRef>(m_handle));
+                const Networking::socket_t socket = m_dnsSD->m_descriptor->m_funcDNSServiceRefSockFD(static_cast<DNSServiceRef>(m_handle));
 
                 Networking::SetSocketBlockingEnabled(socket, false);
 
-                DNSServiceErrorType err;
+                DNSServiceErrorType err = kDNSServiceErr_NoError;
 
                 do
                 {
@@ -472,13 +472,13 @@ void DnsSDHandle::Init(void* h, int32_t e)
                     {
                         break;
                     }
-                    const int selected = Networking::WaitForIncomingData(socket);
+                    const int selected = Networking::WaitForIncomingData(socket, 500);
 
                     if (m_stop || selected < 0)
                     {
                         break;
                     }
-                    if (select == 0)
+                    if (selected == 0)
                     {
                         continue;
                     }
@@ -494,9 +494,9 @@ DnsSDHandle::~DnsSDHandle()
 
     if (static_cast<DNSServiceErrorType>(m_error) == kDNSServiceErr_NoError)
     {
-        assert(m_handle);
-        m_dnsSD->m_descriptor->m_funcDNSServiceRefDeallocate(static_cast<DNSServiceRef>(m_handle));
-        
+        // Wait for the processing thread to exit BEFORE deallocating
+        // the handle, so DNSServiceProcessResult is never called on
+        // a freed DNSServiceRef.
         if (m_processResult.valid())
         {
             try
@@ -508,6 +508,8 @@ DnsSDHandle::~DnsSDHandle()
                 assert(false);
             }
         }
+        assert(m_handle);
+        m_dnsSD->m_descriptor->m_funcDNSServiceRefDeallocate(static_cast<DNSServiceRef>(m_handle));
     }
 }
 
@@ -519,13 +521,18 @@ static uint8_t TxtLen(const char* txt)
     return static_cast<uint8_t>(l);
 }
 
-static char* DnsParseDomainName(char* p, char** x) noexcept
+static char* DnsParseDomainName(char* p, char* pEnd, char** x) noexcept
 {
     uint8_t* v8;
-    uint16_t* v16, skip;
+    uint16_t skip;
     uint16_t i, j, dlen, len;
     int more, compressed;
     char* name, * start;
+
+    if (*x >= pEnd)
+    {
+        return nullptr;
+    }
 
     start = *x;
     compressed = 0;
@@ -541,29 +548,62 @@ static char* DnsParseDomainName(char* p, char** x) noexcept
     j = 0;
     skip = 0;
 
+    int hops = 0;
+
     while (more == 1)
     {
+        if (*x >= pEnd)
+        {
+            free(name);
+            return nullptr;
+        }
+
         v8 = (uint8_t*)*x;
         dlen = *v8;
 
         if ((dlen & 0xc0) == 0xc0)
         {
-            v16 = (uint16_t*)*x;
-            *x = p + (SWAP16(*v16) & 0x3fff);
+            if (*x + 2 > pEnd)
+            {
+                free(name);
+                return nullptr;
+            }
+            uint16_t raw;
+            memcpy(&raw, *x, sizeof(raw));
+            uint16_t offset = SWAP16(raw) & 0x3fff;
+            if (p + offset >= pEnd)
+            {
+                free(name);
+                return nullptr;
+            }
+            *x = p + offset;
             if (compressed == 0) skip += 2;
             compressed = 1;
+            if (++hops > 128)
+            {
+                free(name);
+                return nullptr;
+            }
             continue;
         }
 
         *x += 1;
+        if (*x + dlen > pEnd)
+        {
+            free(name);
+            return nullptr;
+        }
+
         if (dlen > 0)
         {
             len += dlen;
-            name = (char*)realloc(name, len);
-            if (!name)
+            char* tmp = (char*)realloc(name, len);
+            if (!tmp)
             {
+                free(name);
                 return nullptr;
             }
+            name = tmp;
         }
 
         for (i = 0; i < dlen; i++)
@@ -577,15 +617,22 @@ static char* DnsParseDomainName(char* p, char** x) noexcept
         if (dlen == 0) more = 0;
         else
         {
+            if (*x >= pEnd)
+            {
+                free(name);
+                return nullptr;
+            }
             v8 = (uint8_t*)*x;
             if (*v8 != 0)
             {
                 len += 1;
-                name = (char*)realloc(name, len);
-                if (!name)
+                char* tmp = (char*)realloc(name, len);
+                if (!tmp)
                 {
+                    free(name);
                     return nullptr;
                 }
+                name = tmp;
                 name[j++] = '.';
                 name[j] = '\0';
             }

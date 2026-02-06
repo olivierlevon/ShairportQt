@@ -53,13 +53,27 @@ uint16_t DacpService::GetPort(unsigned int waitMS /*= 0*/) const noexcept
 
 void DacpService::Resolve()
 {
-    if (m_resolved)
+    // Wait for any previous resolve to complete before starting a new one
+    std::future<DnsHandlePtr> oldFuture;
+
     {
         const lock_guard<mutex> guard(m_mtx);
-        m_hostName.clear();
-        m_port      = 0;
-        m_resolved  = false;
+
+        std::swap(oldFuture, m_futureResolveServiceHandle);
+
+        if (m_resolved)
+        {
+            m_hostName.clear();
+            m_port      = 0;
+            m_resolved  = false;
+        }
     }
+    // Block until old resolve finishes (outside lock to avoid deadlock)
+    if (oldFuture.valid())
+    {
+        try { oldFuture.wait(); } catch (...) {}
+    }
+
     auto futureResolveServiceHandle = async(launch::async, [this]() -> DnsHandlePtr
         {
             return m_dnsSD->ResolveService(m_interfaceIndex, m_serviceName, m_regType, m_replyDomain, this);

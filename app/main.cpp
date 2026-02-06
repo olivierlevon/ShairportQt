@@ -1,5 +1,6 @@
 #include <iostream>
 #include <memory>
+#include <random>
 #include <string>
 #include <stdexcept>
 
@@ -78,7 +79,7 @@ int main(int argc, char** argv)
         }
     }
     // set random seed
-    srand(static_cast<unsigned int>(time(nullptr)));
+    srand(std::random_device{}());
 
     setlocale(LC_ALL, "C");
 
@@ -158,7 +159,7 @@ int main(int argc, char** argv)
 
         spdlog::info("Terminating with result {}", result);
     }
-    catch (bad_alloc)
+    catch (const bad_alloc&)
     {
         spdlog::error("The system is out of memory");
 
@@ -172,7 +173,7 @@ int main(int argc, char** argv)
             msgBox.exec();
         }
     }
-    catch (runtime_error e)
+    catch (const runtime_error& e)
     {
         spdlog::error("Runtime error: {}", e.what());
 

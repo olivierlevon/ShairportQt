@@ -98,6 +98,10 @@ SharedPtr<IValueCollection> RaopServer::GetClient(const string& remoteAddr, bool
 		// insert new client into our collection
 		VariantValue::Key(remoteAddr).Set(m_clients, client.value());
 	}
+	if (!client.has_value())
+	{
+		return {};
+	}
 	return move(client.value());
 }
 
@@ -345,7 +349,7 @@ void RaopServer::Run() noexcept
 										if (i != mapKeyValue.end())
 										{
 											const Variant varVolume = i->second;
-											const int64_t volume = static_cast<uint64_t>(VariantValue::Get<double>(varVolume) * 1000.);
+											const int64_t volume = static_cast<int64_t>(VariantValue::Get<double>(varVolume) * 1000.);
 
 											VariantValue::Key("Volume").Set(m_config, volume);
 										}
@@ -738,10 +742,12 @@ void RaopServer::Run() noexcept
 	}
 	unique_ptr<HairTunes> decoder;
 
-	if (m_decoder)
 	{
 		const lock_guard<shared_mutex> guard(m_mtxDecoder);
-		decoder.swap(m_decoder);
+		if (m_decoder)
+		{
+			decoder.swap(m_decoder);
+		}
 	}
 	if (decoder)
 	{

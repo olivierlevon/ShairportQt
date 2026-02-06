@@ -1,5 +1,5 @@
 #include "StringIDs.h"
-#include "exception"
+#include <exception>
 #include "Languages.h"
 
 using namespace std;
@@ -94,7 +94,7 @@ namespace Localization::Spanish
 			return "Acerca de"s;
 
 		case StringID::ABOUT_INFO:
-			return CW2AEX(L"\xA9"s) + " Copyright 2025\nFrank Friemel\n\nShairportQt está basado en Shairport de James Laird\n "s;
+			return CW2AEX(L"\xA9"s) + " Copyright 2026\nFrank Friemel\n\nShairportQt está basado en Shairport de James Laird\n "s;
 
 		case StringID::OPTION_MINIMIZED:
 			return "Iniciar minimizado"s;

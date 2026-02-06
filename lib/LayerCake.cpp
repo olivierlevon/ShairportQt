@@ -115,6 +115,7 @@ bool VariantToFloat(VARIANT& var)
 {
     if (var.vt == VT_BSTR)
     {
+        if (!var.bstrVal) return SUCCEEDED(::VariantChangeType(&var, &var, 0, VT_R8));
         std::wstring strVal = var.bstrVal;
 
         const auto sep = strVal.find_first_not_of(L"0123456789-+eE"s);
@@ -154,12 +155,21 @@ bool CreateProcess(const char* cmd, FILE** readPipe, FILE** writePipe /*= NULL*/
     // open two pipes: Pipe1: parent reads, pipe2_: parent writes
     if ((ispipe1 = pipe(fd1)) < 0 || (ispipe2 = pipe(fd2)) < 0)
     {
+        if (ispipe1 >= 0)
+        {
+            close(fd1[0]);
+            close(fd1[1]);
+        }
         return false;
     }
 
     switch (cpid = fork())
     {
     case -1:
+        close(fd1[0]);
+        close(fd1[1]);
+        close(fd2[0]);
+        close(fd2[1]);
         return false;
 
     case 0:
@@ -174,6 +184,7 @@ bool CreateProcess(const char* cmd, FILE** readPipe, FILE** writePipe /*= NULL*/
         close(fd2[1]);
 
         execlp("/bin/sh", "sh", "-c", cmd, NULL);
+        _exit(127);
     }
     break;
 
@@ -182,6 +193,12 @@ bool CreateProcess(const char* cmd, FILE** readPipe, FILE** writePipe /*= NULL*/
         // parent
         if ((*readPipe = fdopen(fd1[0], "r")) == NULL || (wp = fdopen(fd2[1], "w")) == NULL)
         {
+            if (*readPipe)
+            {
+                fclose(*readPipe);  // also closes fd1[0]
+                *readPipe = NULL;
+                fd1[0] = -1;
+            }
             result = false;
         }
         else
@@ -206,7 +223,7 @@ bool CreateProcess(const char* cmd, FILE** readPipe, FILE** writePipe /*= NULL*/
     {
         close(fd1[1]);
 
-        if (!result)
+        if (!result && fd1[0] >= 0)
         {
             close(fd1[0]);
         }
@@ -245,16 +262,22 @@ BSTR SysAllocStringLen(const OLECHAR* psz, size_t len_in_chars)
 {
     BSTR result = NULL;
 
-    if (psz)
+    const size_t sizeInBytes = (len_in_chars + 1) * sizeof(OLECHAR);
+
+    result = (BSTR)malloc(sizeInBytes);
+
+    if (result)
     {
-        const size_t sizeInBytes = (len_in_chars + 1) * sizeof(OLECHAR);
-
-        result = (BSTR)malloc(sizeInBytes);
-
-        if (result)
+        if (psz)
         {
-            memcpy(result, psz, sizeInBytes - sizeof(OLECHAR));
-            *(result + len_in_chars) = L'\0';
+            const size_t srcLen = wcslen(psz);
+            const size_t copyChars = srcLen < len_in_chars ? srcLen : len_in_chars;
+            memcpy(result, psz, copyChars * sizeof(OLECHAR));
+            wmemset(result + copyChars, L'\0', len_in_chars - copyChars + 1);
+        }
+        else
+        {
+            wmemset(result, L'\0', len_in_chars + 1);
         }
     }
     return result;
@@ -1487,7 +1510,7 @@ HRESULT VariantChangeType(VARIANTARG* pvargDest, const VARIANTARG* pvarSrc, USHO
             }
             else
             {
-                pvargDest->boolVal = (*pvarSrc->bstrVal != L'f' && *pvarSrc->bstrVal != L'F' && *pvarSrc->bstrVal == L'0') ? VARIANT_TRUE : VARIANT_FALSE;
+                pvargDest->boolVal = (*pvarSrc->bstrVal != L'f' && *pvarSrc->bstrVal != L'F' && *pvarSrc->bstrVal != L'0') ? VARIANT_TRUE : VARIANT_FALSE;
             }
             pvargDest->vt = vt;
         }
@@ -2444,7 +2467,10 @@ static rapidjson::Value MakeRapidJsonValue(rapidjson::Document& document, const 
 
     case VT_BSTR:
     {
-        result.SetString(CW2AEX(value.bstrVal), document.GetAllocator());
+        if (value.bstrVal)
+            result.SetString(CW2AEX(value.bstrVal), document.GetAllocator());
+        else
+            result.SetString("", document.GetAllocator());
     }
     break;
 
@@ -2626,7 +2652,7 @@ SharedPtr<IStream> ToJson(const IValueCollection* valueCollection, JsonFormat fo
     
     if (!ToJson(valueCollection, result.p, format))
     {
-        std::runtime_error("failed to create json");
+        throw std::runtime_error("failed to create json");
     }
     result->Seek({}, STREAM_SEEK_SET, nullptr);
     return result;

@@ -25,6 +25,7 @@ typedef struct structDmapInfo
 class IRaopEvents
 {
 public:
+	virtual ~IRaopEvents() = default;
 	virtual void OnCreateRaopService(bool success) noexcept = 0;
 	virtual void OnSetCurrentDacpID(DacpID&& dacpID) noexcept = 0;
 	virtual void OnSetCurrentDmapInfo(DmapInfo&& dmapInfo) noexcept = 0;
@@ -91,6 +92,6 @@ private:
 	std::atomic_bool						m_serviceDisabled;
 	const SharedPtr<IValueCollection>  		m_clients;
 	IRaopEvents* const						m_raopEvents;
-	int										m_duration{ 0 }; // total duration time [s]
-	int										m_position{ 0 }; // current play position time [s]
+	std::atomic<int>						m_duration{ 0 }; // total duration time [s]
+	std::atomic<int>						m_position{ 0 }; // current play position time [s]
 };

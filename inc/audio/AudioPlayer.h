@@ -15,7 +15,7 @@ class 	WavePlayThread;
 class AudioPlayer 
 {
 public:
-	AudioPlayer(const std::string device = "default");
+	explicit AudioPlayer(const std::string device = "default");
 	~AudioPlayer();
 
 	// data stream

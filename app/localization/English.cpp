@@ -1,6 +1,7 @@
 #include "StringIDs.h"
-#include "exception"
+#include <exception>
 #include "Languages.h"
+#include <spdlog/spdlog.h>
 
 using namespace std;
 using namespace string_literals;
@@ -34,7 +35,7 @@ namespace Localization::English
 			return "Current stream will be interrupted for reconfiguration, sorry!"s;
 
 		case StringID::FAILED_TO_START_DACP_BROWSER:
-			return "The DACP browser could not be startet. Media Control is not available."s;
+			return "The DACP browser could not be started. Media Control is not available."s;
 
 		case StringID::MENU_FILE:
 			return "&File"s;
@@ -94,7 +95,7 @@ namespace Localization::English
 			return "About"s;
 
 		case StringID::ABOUT_INFO:
-			return CW2AEX(L"\xA9"s) + " Copyright 2024\nFrank Friemel\n\nShairportQt is based on Shairport by James Laird\n "s;
+			return CW2AEX(L"\xA9"s) + " Copyright 2026\nFrank Friemel\n\nShairportQt is based on Shairport by James Laird\n "s;
 
 		case StringID::OPTION_MINIMIZED:
 			return "Start minimized"s;
@@ -139,6 +140,7 @@ namespace Localization::English
 			return "&Show \"Now Playing\" in Tray"s;
 
 		}
-		throw runtime_error("undefined string-id");
+		spdlog::error("undefined string-id: {}", id);
+		return "???"s;
 	}
 }

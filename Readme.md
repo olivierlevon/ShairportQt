@@ -66,7 +66,7 @@ Afterwards `ShairportQt` application should be available from your start menu.
 
 ## Problem reports
 
-When you have issues with `ShairportQt` please provide following informations:
+When you have issues with `ShairportQt` please provide the following information:
 
 - Operating System you're using.
 - detailed steps how to reproduce.
@@ -74,19 +74,84 @@ When you have issues with `ShairportQt` please provide following informations:
 
 ## Building
 
-`ShairportQt` is a `CMake` project. You'll need a complete c++ development environment and these packages to build it:
+`ShairportQt` is a `CMake` project (C++17). You'll need a complete C++ development environment and these packages:
 
 - `openssl`
 - `spdlog`
 - `sockpp`
-- `qtbase`
-- `gtest`
+- `qtbase` (Qt 6)
+- `gtest` / `gmock`
 
-I recommend to use `vcpkg` in order to get them.
+I recommend to use [`vcpkg`](https://github.com/microsoft/vcpkg) in order to get them.
 It works very well on Linux and Windows.
 
-On Windows just open `ShairportQt` as CMake project with Visual Studio.
-On Linux you may use Visual Studio Code or build from the command line (assumed you're using `vcpkg`):
+### Windows (Visual Studio)
+
+#### Prerequisites
+
+1. **Visual Studio 2022** (or later) with the *Desktop development with C++* workload.
+
+2. **vcpkg** - install once and integrate:
+   ```powershell
+   git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+   C:\vcpkg\bootstrap-vcpkg.bat
+   ```
+   Set the environment variable so CMake finds it automatically:
+   ```powershell
+   setx VCPKG_ROOT C:\vcpkg
+   ```
+
+3. **Install dependencies** via vcpkg (x64 static):
+   ```powershell
+   C:\vcpkg\vcpkg install openssl spdlog sockpp gtest --triplet x64-windows-static
+   ```
+
+4. **Qt 6** - install via the [Qt online installer](https://download.qt.io/official_releases/online_installers/).
+   Select the *MSVC 2022 64-bit* component. Note the install path (e.g. `C:\Qt\6.8.1\msvc2022_64`).
+   Set `CMAKE_PREFIX_PATH` so CMake finds Qt:
+   ```powershell
+   setx CMAKE_PREFIX_PATH C:\Qt\6.8.1\msvc2022_64
+   ```
+
+5. **Apple Bonjour SDK** - the Bonjour header (`dns_sd.h`) is already included in the repository under `lib/Bonjour/`.
+   At runtime you need [Bonjour for Windows](https://support.apple.com/kb/DL999) installed,
+   which provides `dnssd.dll`.
+
+#### Option A - Open as CMake project in Visual Studio
+
+1. Open Visual Studio and choose **Open a local folder**, then select the `ShairportQt` directory.
+2. Visual Studio will detect `CMakeLists.txt` and configure automatically.
+   If vcpkg is integrated, dependencies are found via the toolchain file.
+3. Select the desired configuration (`x64-Release` or `x64-Debug`) from the toolbar.
+4. Build with **Build > Build All** (`Ctrl+Shift+B`).
+5. The executable is located under `out/build/<config>/ShairportQt.exe`.
+
+#### Option B - Command line
+
+```cmd
+git clone https://github.com/Frank-Friemel/ShairportQt.git
+cd ShairportQt
+cmake -B build -S . ^
+  -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
+  -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
+  -DCMAKE_PREFIX_PATH=%CMAKE_PREFIX_PATH% ^
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
+
+The resulting binary is `build\Release\ShairportQt.exe`.
+
+To run the unit tests:
+
+```powershell
+build\Release\ShairportQtTest.exe
+```
+
+### Linux
+
+You may use Visual Studio Code or build from the command line.
+
+#### Using vcpkg
 
 ```shell
 git clone https://github.com/Frank-Friemel/ShairportQt.git
@@ -95,6 +160,28 @@ mkdir build
 cd build
 cmake .. -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release
 cmake --build .
+```
+
+#### Using system packages (Debian/Ubuntu)
+
+```shell
+sudo apt install cmake build-essential \
+  libssl-dev libspdlog-dev libgtest-dev libgmock-dev libasound2-dev \
+  libavahi-compat-libdnssd-dev qt6-base-dev libqt6dbus6
+
+# install sockpp from source
+git clone --depth 1 -b v1.0.0 https://github.com/fpagliughi/sockpp.git
+cd sockpp
+cmake -B build . -DCMAKE_INSTALL_PREFIX=/usr -DSOCKPP_BUILD_STATIC=ON -DSOCKPP_WITH_OPENSSL=ON
+cmake --build build
+sudo cmake --install build
+cd ..
+
+# build ShairportQt
+git clone https://github.com/Frank-Friemel/ShairportQt.git
+cd ShairportQt
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 ```
 
 ### Credits
@@ -157,5 +244,5 @@ sudo systemctl start avahi-daemon
 ```
 
 On some Linux distributions you may have to install `avahi` via their own desktop installation tool. Please see my
-Video [Installation of ShaiportQt on Suse](https://youtu.be/UIfek93D5Hw).
+Video [Installation of ShairportQt on Suse](https://youtu.be/UIfek93D5Hw).
 

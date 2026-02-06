@@ -8,7 +8,9 @@
 #include <memory.h>
 #include <locale>
 #include <string>
+#ifndef _WIN32
 #include <codecvt>
+#endif
 #include <memory>
 #include <atomic>
 #include <vector>
@@ -123,9 +125,9 @@ inline uint32_t GetEnvironmentVariableA(const char* lpName, char* lpBuffer, uint
     {
         result = static_cast<uint32_t>(strlen(env));
 
-        if (result && lpBuffer && nSize >= result)
+        if (result && lpBuffer && nSize > result)
         {
-            memcpy(lpBuffer, env, result);
+            memcpy(lpBuffer, env, result + 1); // include null terminator
         }
     }
     return result;
@@ -197,7 +199,7 @@ typedef BYTE*               PBYTE;
 typedef BYTE*               LPBYTE;
 typedef int*                PINT;
 typedef int*                LPINT;
-typedef int16_t             WORD;
+typedef uint16_t            WORD;
 typedef WORD*               PWORD;
 typedef WORD*               LPWORD;
 typedef int32_t*            LPLONG;
@@ -371,7 +373,7 @@ typedef uint16_t                  VARTYPE;
 #define MAXLONG                         (0x7fffffff)
 
 #ifndef NULL
-#define NULL                            ((void *)0)
+#define NULL                            nullptr
 #endif
 
 #ifndef FALSE
@@ -421,11 +423,7 @@ extern const IID GUID_NULL;
 
 inline int InlineIsEqualGUID(REFGUID rguid1, REFGUID rguid2)
 {
-    return (
-        ((uint32_t*)&rguid1)[0] == ((uint32_t*)&rguid2)[0] &&
-        ((uint32_t*)&rguid1)[1] == ((uint32_t*)&rguid2)[1] &&
-        ((uint32_t*)&rguid1)[2] == ((uint32_t*)&rguid2)[2] &&
-        ((uint32_t*)&rguid1)[3] == ((uint32_t*)&rguid2)[3]);
+    return !memcmp(&rguid1, &rguid2, sizeof(GUID));
 }
 
 inline int IsEqualGUID(REFGUID rguid1, REFGUID rguid2)
@@ -1460,9 +1458,13 @@ public:
 
     inline bool FromFile(const std::string& path) noexcept
     {
-        Clear();
-
         const std::lock_guard<std::mutex> guard(m_mtxData);
+
+        m_buffer.clear();
+        m_readPos = 0;
+        m_writePos = 0;
+        m_bWriteStream = false;
+
         FILE* h = nullptr;
 
 #ifdef _WIN32
@@ -1543,12 +1545,15 @@ public:
 
     void InitFromMemory(size_t nSize, const void* p = nullptr)
     {
-        Clear();
+        const std::lock_guard<std::mutex> guard(m_mtxData);
+
+        m_buffer.clear();
+        m_readPos = 0;
+        m_writePos = 0;
+        m_bWriteStream = false;
 
         if (nSize)
         {
-            const std::lock_guard<std::mutex> guard(m_mtxData);
-
             m_buffer.resize(nSize);
 
             if (p)
@@ -1716,35 +1721,23 @@ public:
         }
         try
         {
-            *ppstm = new BlobStream;
+            SharedPtr<BlobStream> clone = new BlobStream;
+
+            {
+                const std::lock_guard<std::mutex> guard(m_mtxData);
+                clone->m_buffer = m_buffer;
+                clone->m_readPos = m_readPos;
+                clone->m_writePos = m_writePos;
+            }
+
+            *ppstm = clone.Detach();
+            return S_OK;
         }
         catch (...)
         {
             *ppstm = nullptr;
-        }
-        if ((*ppstm) == nullptr)
-        {
             return E_OUTOFMEMORY;
         }
-
-        (*ppstm)->AddRef();
-
-        const auto readPos = m_readPos;
-        m_readPos = 0;
-        ULARGE_INTEGER cb;
-        cb.QuadPart = static_cast<ULONGLONG>(m_buffer.size());
-
-        const HRESULT hr = CopyTo(*ppstm, cb, nullptr, nullptr);
-
-        m_readPos = readPos;
-
-        if (FAILED(hr))
-        {
-            (*ppstm)->Release();
-            *ppstm = nullptr;
-            return hr;
-        }
-        return (*ppstm)->Seek({}, SEEK_SET, nullptr);
     }
 
     HRESULT STDMETHODCALLTYPE Read(
@@ -1861,11 +1854,13 @@ public:
             }
             m_writePos = static_cast<ULONG>(m_buffer.size());
         }
-        if ((m_writePos + cb) > static_cast<ULONG>(m_buffer.size()))
+        const size_t requiredSize = static_cast<size_t>(m_writePos) + static_cast<size_t>(cb);
+
+        if (requiredSize > m_buffer.size())
         {
             try
             {
-                m_buffer.resize(m_writePos + cb);
+                m_buffer.resize(requiredSize);
             }
             catch (...)
             {
@@ -1900,31 +1895,38 @@ public:
         const std::lock_guard<std::mutex> guard(m_mtxData);
 
         if (m_mode == Mode::blob)
-        {       
+        {
+            LONG newPos = 0;
+
             switch (dwOrigin)
             {
             case STREAM_SEEK_SET:
             {
-                m_readPos = lMove;
-                m_writePos = lMove;
+                newPos = lMove;
             }
             break;
 
             case STREAM_SEEK_CUR:
             {
-                m_readPos += lMove;
-                m_writePos += lMove;
+                newPos = static_cast<LONG>(m_bWriteStream ? m_writePos : m_readPos) + lMove;
             }
             break;
 
             case STREAM_SEEK_END:
             {
-                m_readPos = static_cast<ULONG>(m_buffer.size()) + lMove;
-                m_writePos = static_cast<ULONG>(m_buffer.size()) + lMove;
+                newPos = static_cast<LONG>(m_buffer.size()) + lMove;
             }
             break;
             }
-            assert(m_readPos <= m_buffer.size());
+
+            if (newPos < 0 || static_cast<ULONG>(newPos) > static_cast<ULONG>(m_buffer.size()))
+            {
+                return STG_E_SEEKERROR;
+            }
+
+            const ULONG clampedPos = static_cast<ULONG>(newPos);
+            m_readPos = clampedPos;
+            m_writePos = clampedPos;
 
             if (plibNewPosition != nullptr)
             {
@@ -1948,7 +1950,10 @@ public:
 
         if (libNewSize.u.LowPart == 0)
         {
-            Clear();
+            m_buffer.clear();
+            m_readPos = 0;
+            m_writePos = 0;
+            m_bWriteStream = false;
             return S_OK;
         }
 
@@ -2166,6 +2171,7 @@ public:
     template<class T>
     Variant(T nSrc, VARTYPE vtSrc)
     {
+        ::VariantInit(this);
         switch (vtSrc)
         {
         case VT_INT:
@@ -2223,8 +2229,12 @@ public:
     }
     Variant& operator=(Variant&& varSrc) noexcept
     {
-        memcpy(this, &varSrc, sizeof(Variant));
-        ::VariantInit(&varSrc);
+        if (this != &varSrc)
+        {
+            Clear();
+            memcpy(this, &varSrc, sizeof(Variant));
+            ::VariantInit(&varSrc);
+        }
         return *this;
     }
     Variant& operator=(const VARIANT& varSrc)
@@ -2237,8 +2247,12 @@ public:
     }
     Variant& operator=(VARIANT&& varSrc)
     {
-        memcpy(this, &varSrc, sizeof(Variant));
-        ::VariantInit(&varSrc);
+        if (static_cast<VARIANT*>(this) != &varSrc)
+        {
+            Clear();
+            memcpy(static_cast<VARIANT*>(this), &varSrc, sizeof(VARIANT));
+            ::VariantInit(&varSrc);
+        }
         return *this;
     }    
     Variant& operator=(LPCOLESTR lpszSrc)
@@ -2380,7 +2394,7 @@ public:
     }
     Variant& operator=(IUnknown* pSrc)
     {
-        if (vt != VT_DISPATCH || pSrc != punkVal)
+        if (vt != VT_UNKNOWN || pSrc != punkVal)
         {
             Clear();
             vt = VT_UNKNOWN;
@@ -2722,13 +2736,13 @@ class FutureValue
 {
 public:
     FutureValue(std::future<Variant>&& f)
-        : m_f(std::move(f))
+        : m_sf(f.share())
     {
     }
 
     FutureValue()
     {
-        m_f = m_p.get_future();
+        m_sf = m_p.get_future().share();
     }
 
     HRESULT STDMETHODCALLTYPE QueryInterface(const IID& iid, void** ppv) override
@@ -2750,7 +2764,7 @@ public:
 
     std::shared_future<Variant> GetSharedFuture() noexcept override
     {
-        return m_f.share();
+        return m_sf;
     }
 
     Variant Get() override
@@ -2759,7 +2773,7 @@ public:
 
         if (!m_hasValue)
         {
-            m_value     = m_f.get();
+            m_value     = m_sf.get();
             m_hasValue  = true;
         }
         return m_value;
@@ -2779,20 +2793,21 @@ public:
         }
         try
         {
-            return m_f.wait_for(std::chrono::milliseconds(ms)) == std::future_status::ready;
+            const std::lock_guard guard{ m_mtx };
+            return m_sf.wait_for(std::chrono::milliseconds(ms)) == std::future_status::ready;
         }
         catch (...)
         {
         }
-        return true;
+        return false;
     }
 
 private:
-    Variant                         m_value;
-    std::atomic_bool                m_hasValue{ false };
-    mutable std::mutex              m_mtx;
-    mutable std::future<Variant>    m_f;
-    std::promise<Variant>           m_p;
+    Variant                                 m_value;
+    std::atomic_bool                        m_hasValue{ false };
+    mutable std::mutex                      m_mtx;
+    mutable std::shared_future<Variant>     m_sf;
+    std::promise<Variant>                   m_p;
 };
 
 enum class JsonFormat
@@ -2899,9 +2914,9 @@ namespace VariantValue
             {
                 result = static_cast<T>(temp.dblVal);
             }
-            else
+            else if (var.bstrVal)
             {
-                result = static_cast<T>(std::stod(var.bstrVal));
+                result = static_cast<T>(std::wcstod(var.bstrVal, nullptr));
             }
         }
         break;
@@ -3016,7 +3031,10 @@ namespace VariantValue
 
         case VT_BSTR:
         {
-            result = var.bstrVal;
+            if (var.bstrVal)
+            {
+                result = var.bstrVal;
+            }
         }
         break;
 
@@ -3130,7 +3148,10 @@ namespace VariantValue
 
         case VT_BSTR:
         {
-            result = CW2AEX(var.bstrVal);
+            if (var.bstrVal)
+            {
+                result = CW2AEX(var.bstrVal);
+            }
         }
         break;
 
@@ -3353,7 +3374,7 @@ namespace VariantValue
 
         case VT_BSTR:
         {
-            result = wcscmp(var.bstrVal, L"false") != 0 ? true : false;
+            result = var.bstrVal && wcscmp(var.bstrVal, L"false") != 0 ? true : false;
         }
         break;
 
@@ -3469,9 +3490,9 @@ namespace VariantValue
             {
                 result = temp.dblVal;
             }
-            else
+            else if (var.bstrVal)
             {
-                result = std::stod(var.bstrVal);
+                result = std::wcstod(var.bstrVal, nullptr);
             }
         }
         break;
@@ -3739,8 +3760,7 @@ namespace VariantValue
 		}
 
         explicit Key(const std::string& name) noexcept
-            : m_name{ name.c_str()}
-            , m_id{ name.empty() ? 0 : std::hash<std::string>{}(name)}
+            : Key(name.c_str())
         {
         }
 

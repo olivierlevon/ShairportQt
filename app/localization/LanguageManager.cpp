@@ -72,7 +72,7 @@ namespace Localization
                 {
                     return '-';
                 }
-                return std::tolower(c);
+                return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             });
     }
 

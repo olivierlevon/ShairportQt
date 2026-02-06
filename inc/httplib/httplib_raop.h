@@ -5818,6 +5818,9 @@ inline bool Server::listen_internal() {
           task_queue->on_idle();
           continue;
         }
+        if (val < 0 || svr_sock_ == INVALID_SOCKET) {
+          break;
+        }
 #ifndef _WIN32
       }
 #endif

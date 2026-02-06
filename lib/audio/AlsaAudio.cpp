@@ -492,22 +492,22 @@ bool Mixer::element_exists(string hw_device, string element_name)
 
     if ((err = snd_mixer_attach(temp_handle, hw_device.c_str())) < 0)
     {
-        handle_error_code(err, true, "Cannot attach mixer to device.");
         snd_mixer_close(temp_handle);
+        handle_error_code(err, true, "Cannot attach mixer to device.");
         return false;
     }
 
     if ((err = snd_mixer_selem_register(temp_handle, NULL, NULL)) < 0)
     {
-        handle_error_code(err, true, "Cannot register simple mixer object.");
         snd_mixer_close(temp_handle);
+        handle_error_code(err, true, "Cannot register simple mixer object.");
         return false;
     }
 
     if ((err = snd_mixer_load(temp_handle)) < 0)
     {
-        handle_error_code(err, true, "Cannot load sound mixer.");
         snd_mixer_close(temp_handle);
+        handle_error_code(err, true, "Cannot load sound mixer.");
         return false;
     }
 
@@ -555,6 +555,7 @@ double Mixer::get_cur_vol_pct(snd_mixer_selem_channel_id_t channel)
 {
     long min, max, cur;
     get_vol_range(&min, &max);
+    if (max == min) return 0.0;
     cur = get_cur_vol_raw(channel);
     return round((double)cur / (double)(max - min) * 100.0) / 100.0;
 }
@@ -656,7 +657,7 @@ map<string, string> AlsaAudio::ListDevices()
     }
     else
     {
-        throw runtime_error("could not get sounde-device list");
+        throw runtime_error("could not get sound-device list");
     }
     return result;
 }

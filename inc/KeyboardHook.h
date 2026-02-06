@@ -22,6 +22,7 @@ namespace KeyboardHook
 	class ICallback
 	{
 	public:
+		virtual ~ICallback() = default;
 		virtual void OnKeyPressed(Key key) noexcept = 0;
 	};
 

@@ -11,6 +11,7 @@
 class IDnsSDEvents
 {
 public:
+    virtual ~IDnsSDEvents() = default;
     virtual void OnDNSServiceBrowseReply(
         bool registered,
         uint32_t interfaceIndex,

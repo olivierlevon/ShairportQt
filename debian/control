@@ -1,8 +1,8 @@
 Package: shairport-qt
-Version: 1.0.0.4
+Version: 1.0.0.5
 Maintainer: Frank Friemel <frank.friemel@gdata.de>
 Architecture: amd64
-Section: sound,utils,misc
+Section: sound
 Priority: optional
 Homepage: https://github.com/Frank-Friemel/ShairportQt
 Installed-Size: 7500
@@ -23,6 +23,7 @@ Build-Depends: libssl-dev (>= 3),
  libgtest-dev (>= 1),
  libgmock-dev (>= 1),
  sockpp (= 1.0.0),
+ qt6-base-dev,
  cmake (>= 3.15.0),
  g++ (>= 11)
 Description: An AirPlay Audio-Receiver for your

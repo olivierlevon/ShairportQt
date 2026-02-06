@@ -36,7 +36,7 @@ class DmapParser
 {
 public:
 	DmapParser(void);
-	~DmapParser(void);
+	virtual ~DmapParser(void);
 
 	static const char* dmap_name_from_code(const char *code);
 	int dmap_parse(void* ctx, const char* buf, size_t len);

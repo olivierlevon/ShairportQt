@@ -105,6 +105,12 @@ public:
             }
         }
         break;
+
+        default:
+        {
+            ::BCryptCloseAlgorithmProvider(m_hCrypt, 0);
+            throw std::runtime_error("unsupported RSA key magic");
+        }
         }
     }
     ~RsaInternal()
@@ -390,8 +396,16 @@ std::vector<uint8_t> Rsa::Sign(const std::vector<uint8_t>& input) const
         const std::lock_guard<std::mutex> guard(m_mtx);
 
         output.resize(RSA_size((RSA*)m_handle));
-        output.resize(RSA_private_encrypt(static_cast<int>(input.size()), input.data(), output.data(), (RSA*)m_handle,
-                                        RSA_PKCS1_PADDING));
+        const int encLen = RSA_private_encrypt(static_cast<int>(input.size()), input.data(), output.data(), (RSA*)m_handle,
+                                        RSA_PKCS1_PADDING);
+        if (encLen < 0)
+        {
+            output.clear();
+        }
+        else
+        {
+            output.resize(static_cast<size_t>(encLen));
+        }
     }
     return output;
 }
@@ -405,8 +419,16 @@ std::vector<uint8_t> Rsa::Decrypt(const std::vector<uint8_t>& input) const
         const std::lock_guard<std::mutex> guard(m_mtx);
 
         output.resize(RSA_size((RSA*)m_handle));
-        output.resize(RSA_private_decrypt(static_cast<int>(input.size()), input.data(), output.data(), (RSA*)m_handle,
-                                        RSA_PKCS1_OAEP_PADDING));
+        const int decLen = RSA_private_decrypt(static_cast<int>(input.size()), input.data(), output.data(), (RSA*)m_handle,
+                                        RSA_PKCS1_OAEP_PADDING);
+        if (decLen < 0)
+        {
+            output.clear();
+        }
+        else
+        {
+            output.resize(static_cast<size_t>(decLen));
+        }
     }
     return output;
 }

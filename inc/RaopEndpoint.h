@@ -75,15 +75,20 @@ public:
 	}
 	inline USHORT getSeqNo() const noexcept
 	{
-		return SWAP16(*(unsigned short *)(&buffer[2]));
+		uint16_t v;
+		memcpy(&v, &buffer[2], sizeof(v));
+		return SWAP16(v);
 	}
 	inline void setSeqNo(USHORT n) noexcept
 	{
-		*(unsigned short *)(&buffer[2]) = SWAP16(n);
+		uint16_t v = SWAP16(n);
+		memcpy(&buffer[2], &v, sizeof(v));
 	}
 	inline ULONG getTimeStamp() const noexcept
 	{
-		return SWAP32(*(unsigned long *)(&buffer[4]));
+		uint32_t v;
+		memcpy(&v, &buffer[4], sizeof(v));
+		return SWAP32(v);
 	}
 	inline unsigned char* getData() noexcept
 	{
@@ -95,14 +100,19 @@ public:
 	}
 	inline int getDataLen() const noexcept
 	{
-		return static_cast<int>(size()) - RTP_DATA_OFFSET;
+		const auto s = size();
+		return s > RTP_DATA_OFFSET ? static_cast<int>(s - RTP_DATA_OFFSET) : 0;
 	}
 	inline uint32_t getSSRC() const noexcept
 	{
-		return SWAP32(*(uint32_t *)&buffer[8]);
+		uint32_t v;
+		memcpy(&v, &buffer[8], sizeof(v));
+		return SWAP32(v);
 	}
 	inline ULONGLONG getNTPTimeStamp(int nOffset) const noexcept
 	{
+		assert(nOffset >= 0 && static_cast<size_t>(nOffset + 7) < sizeof(buffer));
+		if (nOffset < 0 || static_cast<size_t>(nOffset + 7) >= sizeof(buffer)) return 0;
 		return MAKEUINT64(	MAKEUINT32(MAKEUINT16(buffer[nOffset+7], buffer[nOffset+6]), MAKEUINT16(buffer[nOffset+5], buffer[nOffset+4])),
 							MAKEUINT32(MAKEUINT16(buffer[nOffset+3], buffer[nOffset+2]), MAKEUINT16(buffer[nOffset+1], buffer[nOffset]))
 						);
@@ -121,6 +131,8 @@ public:
 	}
 	inline void setNTPTimeStamp(int nOffset, ULONGLONG tVal)  noexcept
 	{
+		assert(nOffset >= 0 && static_cast<size_t>(nOffset + 7) < sizeof(buffer));
+		if (nOffset < 0 || static_cast<size_t>(nOffset + 7) >= sizeof(buffer)) return;
 		const DWORD lDWord = LODWORD(tVal);
 		const DWORD hDWord = HIDWORD(tVal);
 
@@ -153,27 +165,35 @@ public:
 	}
 	inline USHORT getMissedSeqNr() const noexcept
 	{
-		return SWAP16(*(unsigned short*)(&buffer[4]));
+		uint16_t v;
+		memcpy(&v, &buffer[4], sizeof(v));
+		return SWAP16(v);
 	}
 	inline USHORT getMissedCount() const noexcept
 	{
-		return SWAP16(*(unsigned short*)(&buffer[6]));
+		uint16_t v;
+		memcpy(&v, &buffer[6], sizeof(v));
+		return SWAP16(v);
 	}
 	inline void setTimeLessLatency(uint32_t nVal) noexcept
 	{
-		*(uint32_t *)(&buffer[4]) = SWAP32(nVal);
+		uint32_t v = SWAP32(nVal);
+		memcpy(&buffer[4], &v, sizeof(v));
 	}
 	inline void setRtpSync(uint32_t nVal) noexcept
 	{
-		*(uint32_t *)(&buffer[16]) = SWAP32(nVal);
+		uint32_t v = SWAP32(nVal);
+		memcpy(&buffer[16], &v, sizeof(v));
 	}
 	inline void setRtpData(uint32_t nVal) noexcept
 	{
-		*(uint32_t *)(&buffer[4]) = SWAP32(nVal);
+		uint32_t v = SWAP32(nVal);
+		memcpy(&buffer[4], &v, sizeof(v));
 	}
 	inline void setSSRC(uint32_t nVal) noexcept
 	{
-		*(uint32_t *)(&buffer[8]) = SWAP32(nVal);
+		uint32_t v = SWAP32(nVal);
+		memcpy(&buffer[8], &v, sizeof(v));
 	}
 	uint8_t* data() noexcept
 	{
@@ -187,6 +207,10 @@ public:
 	{
 		assert(size <= sizeof(buffer));
 
+		if (size > sizeof(buffer))
+		{
+			size = sizeof(buffer);
+		}
 		if (size > bufSize)
 		{
 			memset(buffer + bufSize, 0, size - bufSize);
@@ -206,6 +230,7 @@ class RtpEndpoint;
 class IRtpRequestHandler
 {
 public:
+	virtual ~IRtpRequestHandler() = default;
 	virtual void OnRequest(RtpEndpoint* endpoint, std::unique_ptr<RtpPacket>&& packet) = 0;
 };
 

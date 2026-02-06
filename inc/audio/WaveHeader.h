@@ -53,7 +53,7 @@ namespace AlsaAudio
             myData.subchunk2Size = numBytes;
             myData.chunkSize = myData.subchunk2Size + 36;
         }
-        inline uint8_t	mySize() const
+        inline size_t	mySize() const
         {
             return sizeof(myData);
         }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -59,7 +60,8 @@ public:
             if (ms != INFINITE)
             {
                 const auto stop = std::chrono::steady_clock::now();
-                const uint32_t diff = static_cast<uint32_t>((double)(std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count()) / (double)1000);
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+                const uint32_t diff = elapsed > 0 ? static_cast<uint32_t>(std::min<decltype(elapsed)>(elapsed, ms)) : 0;
 
                 if (ms > diff)
                 {

@@ -14,9 +14,9 @@ TEST(NetworkingTest, CreateAndDestroy)
 {
 	EXPECT_NO_THROW(Networking::Init());
 
-	const int sd = Networking::CreateSocket();
+	const auto sd = Networking::CreateSocket();
 
-	EXPECT_TRUE(sd >= 0);
+	EXPECT_NE(sd, Networking::invalid_socket);
 
 	Networking::DestroySocket(sd);
 }
@@ -25,7 +25,7 @@ TEST(NetworkingTest, CanSetToNonBlockingAndBack)
 {
 	EXPECT_NO_THROW(Networking::Init());
 
-	const int sd = Networking::CreateSocket();
+	const auto sd = Networking::CreateSocket();
 
 	EXPECT_TRUE(Networking::SetSocketBlockingEnabled(sd, false));
 	EXPECT_TRUE(Networking::SetSocketBlockingEnabled(sd, true));
@@ -38,7 +38,7 @@ TEST(NetworkingTest, CanWaitForIncomingData)
 #ifdef _WIN32
 	EXPECT_NO_THROW(Networking::Init());
 
-	const int sd = Networking::CreateSocket();
+	const auto sd = Networking::CreateSocket();
 	EXPECT_TRUE(Networking::SetSocketBlockingEnabled(sd, false));
 
 	unsigned char buf[4096];

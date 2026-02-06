@@ -1,5 +1,5 @@
 #include "StringIDs.h"
-#include "exception"
+#include <exception>
 #include "Languages.h"
 
 using namespace std;
@@ -61,7 +61,7 @@ namespace Localization::Catalan
 			return "Contrasenya"s;
 
 		case StringID::LABEL_AIRPORT_CHANGE:
-			return "Cambiar..."s;
+			return "Canviar..."s;
 
 		case StringID::LABEL_TITLE_INFO:
 			return "Info Pista"s;
@@ -85,7 +85,7 @@ namespace Localization::Catalan
 			return "Tot llest"s;
 
 		case StringID::STATUS_CONNECTED:
-			return "Conectat a "s;
+			return "Connectat a "s;
 
 		case StringID::DIALOG_CHANGE_NAME_PASSWORD:
 			return "Canvia el Nom Airport i Contrasenya"s;
@@ -94,7 +94,7 @@ namespace Localization::Catalan
 			return "Sobre"s;
 
 		case StringID::ABOUT_INFO:
-			return CW2AEX(L"\xA9"s) + " Copyright 2025\nFrank Friemel\n\nShairportQt està basat Shairport de James Laird\n "s;
+			return CW2AEX(L"\xA9"s) + " Copyright 2026\nFrank Friemel\n\nShairportQt està basat en Shairport de James Laird\n "s;
 
 		case StringID::OPTION_MINIMIZED:
 			return "Obrir minimitzat"s;

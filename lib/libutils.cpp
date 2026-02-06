@@ -1,6 +1,7 @@
 #include "libutils.h"
 #include <stdlib.h>
 #include <mutex>
+#include <random>
 #include <stdexcept>
 #include <LayerCake.h>
 #include <spdlog/spdlog.h>
@@ -31,7 +32,9 @@ ScopeContext::~ScopeContext()
 
 uint32_t CreateRand(uint32_t nMax /*= std::numeric_limits<uint32_t>::max()*/)
 {
-	return static_cast<uint32_t>((static_cast<double>(nMax) * static_cast<double>(rand())) / static_cast<double>(RAND_MAX));
+	thread_local std::mt19937 gen{ std::random_device{}() };
+	std::uniform_int_distribution<uint32_t> dist(0, nMax);
+	return dist(gen);
 }
 
 vector<unsigned char> DecodeFromHex(const string& str)
@@ -176,7 +179,7 @@ bool GetValueFromRegistry(void* hKey, const char* pValueName, string& strValue, 
 				strValue = (PCSTR)pBuf;
 				bResult = true;
 			}
-			delete pBuf;
+			delete[] pBuf;
 		}
 		RegCloseKey(h);
 	}

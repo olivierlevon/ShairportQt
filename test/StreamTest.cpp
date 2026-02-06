@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 #include "LayerCake.h"
+#include <chrono>
+#include <thread>
 
 using namespace std;
 using namespace string_literals;
+using namespace std::chrono_literals;
 
 TEST(StreamTest, SupportsQueryInterface)
 {
@@ -146,7 +149,7 @@ TEST_P(StreamTest, VerifyGivenStream)
 	ULONG read = 0;
 	EXPECT_EQ(S_OK, stream->Read(readbuf, 4, &read));
 
-	EXPECT_EQ(4, static_cast<size_t>(read));
+	EXPECT_EQ(4u, read);
 	EXPECT_EQ(readbuf[0], '1');
 	EXPECT_EQ(readbuf[1], '2');
 	EXPECT_EQ(readbuf[2], '3');
