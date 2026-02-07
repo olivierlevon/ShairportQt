@@ -1105,20 +1105,14 @@ static int count_leading_zeros(int input)
     if (!input) return 32;
     return __builtin_clz(input);
 }
-#elif defined(_MSC_VER) && defined(_M_IX86)
+#elif defined(_MSC_VER)
+#include <intrin.h>
 static int count_leading_zeros(int input)
 {
-    int output = 0;
+    unsigned long index;
     if (!input) return 32;
-    __asm
-    {
-        mov eax, input;
-        mov edx, 0x1f;
-        bsr ecx, eax;
-        sub edx, ecx;
-        mov output, edx;
-    }
-    return output;
+    _BitScanReverse(&index, static_cast<unsigned long>(input));
+    return 31 - static_cast<int>(index);
 }
 #else
 

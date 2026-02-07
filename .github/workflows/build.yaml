@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  build-x86_64:
     runs-on: ubuntu-latest
 
     steps:
@@ -54,7 +54,179 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ShairportQt
+        name: ShairportQt-x86_64
         path: build/ShairportQt
+        retention-days: 4
+        if-no-files-found: error
+
+  build-arm64:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          cmake build-essential \
+            libssl-dev libspdlog-dev libgtest-dev libgmock-dev libasound2-dev \
+            libavahi-compat-libdnssd-dev
+
+    - name: Install sockpp
+      run: |
+        git clone --depth 1 -b v1.0.0 https://github.com/fpagliughi/sockpp.git
+        cd sockpp
+        cmake -B build . \
+          -DCMAKE_INSTALL_PREFIX=/usr \
+          -DSOCKPP_BUILD_STATIC=ON \
+          -DSOCKPP_WITH_OPENSSL=ON
+        cmake --build build
+        sudo cmake --install build
+
+    - name: Set up Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.8.1'
+        target: desktop
+        arch: linux_gcc_arm64
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -S . \
+          -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: cmake --build build
+
+    - name: Run tests
+      run: ./build/ShairportQtTest
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ShairportQt-arm64
+        path: build/ShairportQt
+        retention-days: 4
+        if-no-files-found: error
+
+  build-windows-x64:
+    runs-on: windows-latest
+
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgGitCommitId: '898b728edc5e0d12b50015f9cd18247c4257a3eb'
+
+    - name: Install vcpkg packages
+      run: vcpkg install openssl spdlog gtest
+
+    - name: Install sockpp
+      run: |
+        git clone --depth 1 -b v1.0.0 https://github.com/fpagliughi/sockpp.git
+        cd sockpp
+        cmake -B build . `
+          -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/sockpp-install" `
+          -DSOCKPP_BUILD_STATIC=ON `
+          -DSOCKPP_WITH_OPENSSL=ON `
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+        cmake --build build --config Release
+        cmake --install build --config Release
+
+    - name: Set up Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.8.1'
+        target: desktop
+        arch: win64_msvc2022_64
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -S . `
+          -A x64 `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/sockpp-install"
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Run tests
+      run: build\Release\ShairportQtTest.exe
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ShairportQt-windows-x64
+        path: build\Release\ShairportQt.exe
+        retention-days: 4
+        if-no-files-found: error
+
+  build-windows-arm64:
+    runs-on: windows-latest
+
+    env:
+      VCPKG_DEFAULT_TRIPLET: arm64-windows-static
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgGitCommitId: '898b728edc5e0d12b50015f9cd18247c4257a3eb'
+
+    - name: Install vcpkg packages
+      run: vcpkg install openssl spdlog gtest
+
+    - name: Install sockpp
+      run: |
+        git clone --depth 1 -b v1.0.0 https://github.com/fpagliughi/sockpp.git
+        cd sockpp
+        cmake -B build . `
+          -A ARM64 `
+          -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/sockpp-install" `
+          -DSOCKPP_BUILD_STATIC=ON `
+          -DSOCKPP_WITH_OPENSSL=ON `
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=arm64-windows-static
+        cmake --build build --config Release
+        cmake --install build --config Release
+
+    - name: Set up Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.8.1'
+        target: desktop
+        arch: win64_msvc2022_arm64
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -S . `
+          -A ARM64 `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=arm64-windows-static `
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/sockpp-install"
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ShairportQt-windows-arm64
+        path: build\Release\ShairportQt.exe
         retention-days: 4
         if-no-files-found: error

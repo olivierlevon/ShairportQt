@@ -39,7 +39,14 @@ public:
         // override when you call ServiceQueryRecord
         assert(false);
     }
+
+    virtual void OnDnsSDError(int32_t errorCode) noexcept
+    {
+        // override to handle DNS-SD errors (e.g. service not running)
+    }
 };
+
+const char* DnsSDErrorString(int32_t errorCode) noexcept;
 
 class DnsSD;
 

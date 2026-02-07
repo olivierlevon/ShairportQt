@@ -1,6 +1,7 @@
 # ShairportQt
 
 An AirPlay Audio-Receiver for your Personal Computer or ARM-SoC (e.g. Raspberry Pi).
+Supports Windows (x64, ARM64), Linux (x64, ARM64) and Raspbian.
 
 Play audio content from your iPhone, iPad, iPod or iTunes on your PC with ShairportQt.
 AirPlay lets you wirelessly stream what's on your iOS device whenever you see the AirPlay symbol.
@@ -23,7 +24,7 @@ Once you've downloaded the
 [zip](https://github.com/Frank-Friemel/ShairportQt/releases) ... just extract the folder which matches your
 OS and follow these instructions:
 
-#### Windows (x64)
+#### Windows (x64 / ARM64)
 
 Just copy the file `ShairportQt.exe` to your filesystem and create a Desktop-Link. That's it.
 
@@ -31,7 +32,7 @@ Shairport depends on Apple's [`Bonjour`](https://support.apple.com/kb/DL999). Ju
 is not installed on your machine. Please retry to start `ShairportQt.exe` after
 installation of `Bonjour`.
 
-#### Linux (x64)
+#### Linux (x64 / ARM64)
 
 The installation for Linux depends a bit on your Linux distribution.
 I myself am using [`Manjaro-Linux`](https://manjaro.org/)
@@ -101,16 +102,22 @@ It works very well on Linux and Windows.
    setx VCPKG_ROOT C:\vcpkg
    ```
 
-3. **Install dependencies** via vcpkg (x64 static):
+3. **Install dependencies** via vcpkg:
    ```powershell
+   # For x64
    C:\vcpkg\vcpkg install openssl spdlog sockpp gtest --triplet x64-windows-static
+   # For ARM64
+   C:\vcpkg\vcpkg install openssl spdlog sockpp gtest --triplet arm64-windows-static
    ```
 
 4. **Qt 6** - install via the [Qt online installer](https://download.qt.io/official_releases/online_installers/).
-   Select the *MSVC 2022 64-bit* component. Note the install path (e.g. `C:\Qt\6.8.1\msvc2022_64`).
-   Set `CMAKE_PREFIX_PATH` so CMake finds Qt:
+   Select the *MSVC 2022 64-bit* component (and/or *MSVC 2022 ARM64* for ARM64 builds).
+   Note the install path and set `CMAKE_PREFIX_PATH` so CMake finds Qt:
    ```powershell
+   # For x64
    setx CMAKE_PREFIX_PATH C:\Qt\6.8.1\msvc2022_64
+   # For ARM64
+   setx CMAKE_PREFIX_PATH C:\Qt\6.8.1\msvc2022_arm64
    ```
 
 5. **Apple Bonjour SDK** - the Bonjour header (`dns_sd.h`) is already included in the repository under `lib/Bonjour/`.
@@ -122,7 +129,7 @@ It works very well on Linux and Windows.
 1. Open Visual Studio and choose **Open a local folder**, then select the `ShairportQt` directory.
 2. Visual Studio will detect `CMakeLists.txt` and configure automatically.
    If vcpkg is integrated, dependencies are found via the toolchain file.
-3. Select the desired configuration (`x64-Release` or `x64-Debug`) from the toolbar.
+3. Select the desired configuration (`x64-Release`, `x64-Debug`, `arm64-Release` or `arm64-Debug`) from the toolbar.
 4. Build with **Build > Build All** (`Ctrl+Shift+B`).
 5. The executable is located under `out/build/<config>/ShairportQt.exe`.
 
@@ -131,15 +138,25 @@ It works very well on Linux and Windows.
 ```cmd
 git clone https://github.com/Frank-Friemel/ShairportQt.git
 cd ShairportQt
+
+REM x64 build
 cmake -B build -S . ^
   -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
   -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
   -DCMAKE_PREFIX_PATH=%CMAKE_PREFIX_PATH% ^
   -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
+
+REM ARM64 build (cross-compile from x64 host)
+cmake -B build-arm64 -S . -A ARM64 ^
+  -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
+  -DVCPKG_TARGET_TRIPLET=arm64-windows-static ^
+  -DCMAKE_PREFIX_PATH=C:\Qt\6.8.1\msvc2022_arm64 ^
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build-arm64 --config Release
 ```
 
-The resulting binary is `build\Release\ShairportQt.exe`.
+The resulting binary is `build\Release\ShairportQt.exe` (or `build-arm64\Release\ShairportQt.exe` for ARM64).
 
 To run the unit tests:
 
@@ -187,7 +204,8 @@ cmake --build build
 ### Credits
 
 Thanks to James Laird who implemented the original version of "Shairport".
-Special thanks to Japanese Translator [maborosohin](https://github.com/maboroshin).
+Special thanks to Japanese translator [maborosohin](https://github.com/maboroshin).
+Localization: English, German, Japanese, Spanish, Catalan, French, Italian.
 
 ### Screenshots
 

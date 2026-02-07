@@ -5,6 +5,7 @@
 #include "LayerCake.h"
 #include "libutils.h"
 #include "Networking.h"
+#include <spdlog/spdlog.h>
 
 static uint8_t TxtLen(const char* txt);
 static char* DnsParseDomainName(char* p, char* pEnd, char** x) noexcept;
@@ -126,6 +127,7 @@ public:
     {
 #ifdef _WIN32
         m_module = LoadLibraryA("dnssd.dll");
+//        m_module = LoadLibraryExA("dnssd.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
 #else
 	    m_module = dlopen("libdns_sd.so", RTLD_LAZY);
 
@@ -282,6 +284,49 @@ DnsHandlePtr DnsSD::CreateRaopServiceFromConfig(const SharedPtr<IValueCollection
     return make_shared<DnsSDHandle>(this, static_cast<void*>(sdRef), static_cast<int32_t>(error));
 }
 
+const char* DnsSDErrorString(int32_t errorCode) noexcept
+{
+    switch (static_cast<DNSServiceErrorType>(errorCode))
+    {
+    case kDNSServiceErr_NoError:                   return "no error";
+    case kDNSServiceErr_Unknown:                   return "unknown error";
+    case kDNSServiceErr_NoSuchName:                return "no such name";
+    case kDNSServiceErr_NoMemory:                  return "out of memory";
+    case kDNSServiceErr_BadParam:                  return "bad parameter";
+    case kDNSServiceErr_BadReference:              return "bad reference";
+    case kDNSServiceErr_BadState:                  return "bad state";
+    case kDNSServiceErr_BadFlags:                  return "bad flags";
+    case kDNSServiceErr_Unsupported:               return "not supported";
+    case kDNSServiceErr_NotInitialized:            return "not initialized";
+    case kDNSServiceErr_AlreadyRegistered:         return "already registered";
+    case kDNSServiceErr_NameConflict:              return "name conflict";
+    case kDNSServiceErr_Invalid:                   return "invalid";
+    case kDNSServiceErr_Firewall:                  return "blocked by firewall";
+    case kDNSServiceErr_Incompatible:              return "client library incompatible with daemon";
+    case kDNSServiceErr_BadInterfaceIndex:         return "bad network interface index";
+    case kDNSServiceErr_Refused:                   return "refused";
+    case kDNSServiceErr_NoSuchRecord:              return "no such record";
+    case kDNSServiceErr_NoAuth:                    return "no authentication";
+    case kDNSServiceErr_NoSuchKey:                 return "no such key";
+    case kDNSServiceErr_NATTraversal:              return "NAT traversal error";
+    case kDNSServiceErr_DoubleNAT:                 return "double NAT detected";
+    case kDNSServiceErr_BadTime:                   return "bad time";
+    case kDNSServiceErr_BadSig:                    return "bad signature";
+    case kDNSServiceErr_BadKey:                    return "bad key";
+    case kDNSServiceErr_Transient:                 return "transient error";
+    case kDNSServiceErr_ServiceNotRunning:         return "background daemon not running";
+    case kDNSServiceErr_NATPortMappingUnsupported: return "NAT does not support port mapping";
+    case kDNSServiceErr_NATPortMappingDisabled:    return "NAT port mapping disabled by administrator";
+    case kDNSServiceErr_NoRouter:                  return "no router configured (no network connectivity)";
+    case kDNSServiceErr_PollingMode:               return "polling mode";
+    case kDNSServiceErr_Timeout:                   return "timeout";
+    case kDNSServiceErr_DefunctConnection:         return "connection to daemon is defunct";
+    case kDNSServiceErr_PolicyDenied:              return "policy denied";
+    case kDNSServiceErr_NotPermitted:              return "not permitted";
+    default:                                       return "unknown error code";
+    }
+}
+
 static void DNSSD_API MyDNSServiceBrowseReply
 (
     DNSServiceRef                       sdRef,
@@ -295,8 +340,15 @@ static void DNSSD_API MyDNSServiceBrowseReply
 )
 {
     assert(context);
+
     IDnsSDEvents* cb = (IDnsSDEvents*)context;
 
+    if (errorCode != kDNSServiceErr_NoError)
+    {
+        spdlog::error("DNSServiceBrowseReply: {}", DnsSDErrorString(errorCode));
+        cb->OnDnsSDError(static_cast<int32_t>(errorCode));
+        return;
+    }
     const bool registered = (flags & kDNSServiceFlagsAdd) ? true : false;
 
     cb->OnDNSServiceBrowseReply(registered, interfaceIndex, serviceName, regtype, replyDomain);
@@ -328,8 +380,15 @@ static void DNSSD_API MyDNSServiceResolveReply
 )
 {
     assert(context);
+
     IDnsSDEvents* cb = (IDnsSDEvents*)context;
 
+    if (errorCode != kDNSServiceErr_NoError)
+    {
+        spdlog::error("DNSServiceResolveReply: {}", DnsSDErrorString(errorCode));
+        cb->OnDnsSDError(static_cast<int32_t>(errorCode));
+        return;
+    }
     cb->OnServiceResolved(txtRecord, txtLen, hosttarget, fullname, port);
 }
 
@@ -361,8 +420,15 @@ static void DNSSD_API MyDNSServiceQueryRecordReply
 )
 {
     assert(context);
+
     IDnsSDEvents* cb = (IDnsSDEvents*)context;
 
+    if (errorCode != kDNSServiceErr_NoError)
+    {
+        spdlog::error("DNSServiceQueryRecordReply: {}", DnsSDErrorString(errorCode));
+        cb->OnDnsSDError(static_cast<int32_t>(errorCode));
+        return;
+    }
     string host;
     
     switch (rrtype)
@@ -484,6 +550,11 @@ void DnsSDHandle::Init(void* h, int32_t e)
                     }
                     err = m_dnsSD->m_descriptor->m_funcDNSServiceProcessResult(static_cast<DNSServiceRef>(m_handle));
                 } while (err == kDNSServiceErr_NoError);
+
+                if (err != kDNSServiceErr_NoError && !m_stop)
+                {
+                    spdlog::error("DNSServiceProcessResult: {}", DnsSDErrorString(err));
+                }
             });
     }
 }

@@ -13,6 +13,7 @@
 #include <QUrl>
 
 #include "localization/StringIDs.h"
+#include <dns_sd.h>
 #include <spdlog/spdlog.h>
 #include "RaopServer.h"
 #include "libutils.h"
@@ -1102,6 +1103,29 @@ void MainDlg::OnDNSServiceBrowseReply(
         {
             spdlog::error("OnDNSServiceBrowseReply failed: {}", e.what());
         }
+    }
+}
+
+void MainDlg::OnDnsSDError(int32_t errorCode) noexcept
+{
+    if (errorCode == kDNSServiceErr_ServiceNotRunning)
+    {
+        spdlog::error("DNS-SD: {}", DnsSDErrorString(errorCode));
+
+        if (!m_dialogClosed)
+        {
+            try
+            {
+                emit ShowMessage(StringID::TROUBLE_SHOOT_RAOP_SERVICE);
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+    else
+    {
+        spdlog::error("DNS-SD: {}", DnsSDErrorString(errorCode));
     }
 }
 

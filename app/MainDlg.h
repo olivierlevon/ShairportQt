@@ -78,6 +78,7 @@ protected:
         const char* serviceName,
         const char* regtype,
         const char* replyDomain) noexcept override;
+    void OnDnsSDError(int32_t errorCode) noexcept override;
 
 protected:
     // QWidget overrides

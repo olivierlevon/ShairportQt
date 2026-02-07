@@ -51,7 +51,9 @@ set(LOCALIZATION_SOURCES    app/localization/LanguageManager.cpp
                             app/localization/Japanese.cpp
                             app/localization/German.cpp
                             app/localization/Spanish.cpp
-                            app/localization/Catalan.cpp)
+                            app/localization/Catalan.cpp
+                            app/localization/French.cpp
+                            app/localization/Italian.cpp)
 
 set(APP_SOURCES app/main.cpp
                 app/MainDlg.cpp

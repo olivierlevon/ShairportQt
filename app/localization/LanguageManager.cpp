@@ -55,6 +55,14 @@ namespace Localization
         {
             return Catalan::GetString(id);
         }
+        else if (m_currentLanguage == "fr-fr"s)
+        {
+            return French::GetString(id);
+        }
+        else if (m_currentLanguage == "it-it"s)
+        {
+            return Italian::GetString(id);
+        }
         return English::GetString(id);
     }
 
@@ -85,6 +93,8 @@ namespace Localization
         result.push_back("ca-ES"s);
         result.push_back("ja-JP"s);
         result.push_back("de-DE"s);
+        result.push_back("fr-FR"s);
+        result.push_back("it-IT"s);
 
         return result;
     }
