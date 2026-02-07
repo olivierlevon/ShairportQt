@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.15.0)
 project(ShairportQt VERSION 1.0.0.5 LANGUAGES CXX)
 
+if (APPLE)
+    enable_language(OBJCXX)
+endif()
+
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
@@ -9,7 +13,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # locate packages
-if (UNIX)
+if (UNIX AND NOT APPLE)
     find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets DBus)
     find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets DBus)
 else()
@@ -25,7 +29,17 @@ find_package(sockpp CONFIG REQUIRED)
 set(LIBRARY_SOURCES lib/dnssd.cpp lib/RaopServer.cpp lib/LayerCake.cpp lib/base64.cpp 
         lib/crypto.cpp lib/HairTunes.cpp lib/libutils.cpp lib/RaopEndpoint.cpp
         lib/audio/AlsaAudio.cpp lib/audio/AudioPlayer.cpp lib/SuspendInhibitor.cpp lib/Networking.cpp
-        lib/DmapParser.cpp lib/KeyboardHook.cpp)
+        lib/DmapParser.cpp lib/KeyboardHook.cpp lib/MediaIntegration.cpp)
+
+if (MSVC)
+    list(APPEND LIBRARY_SOURCES lib/SmtcIntegration.cpp)
+endif()
+if (UNIX AND NOT APPLE)
+    list(APPEND LIBRARY_SOURCES lib/MprisIntegration.cpp)
+endif()
+if (APPLE)
+    list(APPEND LIBRARY_SOURCES lib/NowPlayingIntegration.mm)
+endif()
 
 add_library(ShairLib STATIC ${LIBRARY_SOURCES})
 if (MSVC)
@@ -40,8 +54,14 @@ endif()
 target_include_directories(ShairLib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/inc")
 target_include_directories(ShairLib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/lib/Bonjour")
 target_link_libraries(ShairLib PRIVATE spdlog::spdlog Sockpp::sockpp-static)
-if (UNIX)
+if (MSVC)
+    target_link_libraries(ShairLib PRIVATE windowsapp.lib)
+endif()
+if (UNIX AND NOT APPLE)
     target_link_libraries(ShairLib PRIVATE Qt${QT_VERSION_MAJOR}::DBus)
+endif()
+if (APPLE)
+    target_link_libraries(ShairLib PRIVATE "-framework MediaPlayer" "-framework AppKit" "-framework Foundation")
 endif()
 
 # Shairport Application
@@ -63,11 +83,12 @@ set(APP_SOURCES app/main.cpp
 
 set(APP_RESOURCE res/resource.qrc)
 if (MSVC)
-    # include MSVS's native resource file
-    set(APP_RESOURCE app/ShairportQt.rc ${APP_RESOURCE})
+    # include MSVS's native resource file and application manifest
+    set(APP_RESOURCE app/ShairportQt.rc app/ShairportQt.manifest ${APP_RESOURCE})
 endif()
 
 add_executable(ShairportQt ${APP_SOURCES} ${APP_RESOURCE})
+target_compile_definitions(ShairportQt PRIVATE SHAIRPORTQT_VERSION="${PROJECT_VERSION}")
 
 if (MSVC)
     # we apply the static CRT for MSVC
@@ -85,13 +106,13 @@ else()
 endif()
 
 target_link_libraries(ShairportQt PRIVATE ShairLib)
-if (UNIX)
+if (UNIX AND NOT APPLE)
     target_link_libraries(ShairportQt PRIVATE asound)
 endif()
 target_link_libraries(ShairportQt PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(ShairportQt PRIVATE spdlog::spdlog)
 target_link_libraries(ShairportQt PRIVATE Sockpp::sockpp-static)
-if (UNIX)
+if (UNIX AND NOT APPLE)
     target_link_libraries(ShairportQt PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::DBus)
 else()
     target_link_libraries(ShairportQt PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)

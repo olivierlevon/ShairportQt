@@ -22,6 +22,25 @@
 #include "audio/PlaySound.h"
 #include <time.h>
 
+#ifdef Q_OS_WIN
+// Rename Windows SDK's ICondition to avoid clash with project's ICondition
+#define ICondition ICondition_WindowsSDK
+#include <shobjidl_core.h>
+#undef ICondition
+#include <commctrl.h>
+#include <dwmapi.h>
+#pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "dwmapi.lib")
+
+// Thumbnail toolbar button IDs
+enum ThumbButton : UINT
+{
+    THBB_PREV = 0,
+    THBB_PLAYPAUSE = 1,
+    THBB_NEXT = 2
+};
+#endif
+
 using namespace std;
 using namespace literals;
 
@@ -33,6 +52,9 @@ MainDlg::MainDlg(const SharedPtr<IValueCollection>& config, const std::string& c
     , m_iconPlay{ ":/play.png" }
     , m_iconPause{ ":/pause.png" }
     , m_handleKeyboardHook{ KeyboardHook::Setup(this) }
+#ifdef Q_OS_WIN
+    , m_taskbarCreatedMsg{ RegisterWindowMessageW(L"TaskbarButtonCreated") }
+#endif
 {
     // pre-create pixmap logo
     {
@@ -98,6 +120,13 @@ MainDlg::MainDlg(const SharedPtr<IValueCollection>& config, const std::string& c
         setWindowFlag(Qt::WindowStaysOnTopHint, true);
     }
     ConfigureSystemTray();
+
+    // initialize OS media integration (SMTC on Windows, MPRIS on Linux)
+#ifdef Q_OS_WIN
+    m_mediaIntegration = CreateMediaIntegration(reinterpret_cast<void*>(winId()), this);
+#else
+    m_mediaIntegration = CreateMediaIntegration(nullptr, this);
+#endif
 
     // create a scheduler thread
     m_scheduler = make_unique<std::thread>([this]() { RunScheduler(); });
@@ -1209,6 +1238,18 @@ void MainDlg::OnUpdateMMState()
     m_buttonVolumeDown->setEnabled(enabled);
     m_buttonVolumeUp->setEnabled(enabled);
     m_buttonPlayPauseTrack->setEnabled(enabled);
+
+    if (m_mediaIntegration)
+    {
+        m_mediaIntegration->SetControlsEnabled(enabled);
+    }
+#ifdef Q_OS_WIN
+    if (!enabled && m_taskbarList && m_thumbBarCreated)
+    {
+        m_taskbarList->SetProgressState(
+            reinterpret_cast<HWND>(winId()), TBPF_NOPROGRESS);
+    }
+#endif
 }
 
 void MainDlg::OnPlayState(bool isPlaying)
@@ -1231,6 +1272,14 @@ void MainDlg::OnPlayState(bool isPlaying)
     {
         m_buttonPlayPauseTrack->setIcon(m_iconPlay);
     }
+    if (m_mediaIntegration)
+    {
+        m_mediaIntegration->UpdatePlaybackStatus(isPlaying);
+    }
+#ifdef Q_OS_WIN
+    UpdateTaskbarPlayButton(isPlaying);
+    UpdateTaskbarProgressState(isPlaying);
+#endif
     if (wasPlaying != isPlaying)
     {
         OnUpdateTray();
@@ -1253,6 +1302,13 @@ void MainDlg::OnDmapInfo(QString album, QString track, QString artist)
         m_labelAlbumTitleInfo->setText(m_strCurrentAlbum);
         m_labelTrackTitleInfo->setText(m_strCurrentTrack);
         m_labelArtistTitleInfo->setText(m_strCurrentArtist);
+    }
+    if (m_mediaIntegration)
+    {
+        m_mediaIntegration->UpdateMetadata(
+            m_strCurrentArtist.toStdString(),
+            m_strCurrentTrack.toStdString(),
+            m_strCurrentAlbum.toStdString());
     }
     OnUpdateTray();
 }
@@ -1367,6 +1423,14 @@ void MainDlg::OnShowAdArt()
         m_imageAlbumArt->setPixmap(m_pixmapShairport);
         m_currentAlbumArt.reset();
     }
+    if (m_mediaIntegration)
+    {
+        m_mediaIntegration->UpdateAlbumArt(nullptr, 0, "NONE");
+    }
+#ifdef Q_OS_WIN
+    UpdateTaskbarOverlayIcon(nullptr);
+    InvalidateTaskbarThumbnail();
+#endif
 }
 
 // Widget slot: show album art
@@ -1390,6 +1454,14 @@ void MainDlg::OnAlbumArt()
         }
     }
     if (!item) return;
+
+    if (m_mediaIntegration)
+    {
+        m_mediaIntegration->UpdateAlbumArt(
+            item->first.data(),
+            static_cast<size_t>(item->first.size()),
+            item->second);
+    }
 
     try
     {
@@ -1432,6 +1504,10 @@ void MainDlg::OnAlbumArt()
     {
         spdlog::error("failed to setPixmap: {}", e.what());
     }
+#ifdef Q_OS_WIN
+    UpdateTaskbarOverlayIcon(m_currentAlbumArt.get());
+    InvalidateTaskbarThumbnail();
+#endif
 }
 
 // Widget slot: UpdateWidgets
@@ -1502,6 +1578,13 @@ void MainDlg::OnProgressInfo(int currentSeconds, int totalSeconds, QString conne
         const QString strStatus = GetString(StringID::STATUS_CONNECTED) + connectedClient;
         m_labelStatus->setText(strStatus);
     }
+    if (m_mediaIntegration)
+    {
+        m_mediaIntegration->UpdateProgress(currentSeconds, totalSeconds);
+    }
+#ifdef Q_OS_WIN
+    UpdateTaskbarProgress(currentSeconds, totalSeconds);
+#endif
 }
 
 // Widget slot: "This process should end"
@@ -1518,6 +1601,16 @@ void MainDlg::OnQuit()
 void MainDlg::closeEvent(QCloseEvent* event)
 {
     {
+        // release OS media integration before shutting down services
+        m_mediaIntegration.reset();
+#ifdef Q_OS_WIN
+        if (m_taskbarList)
+        {
+            m_taskbarList->Release();
+            m_taskbarList = nullptr;
+        }
+#endif
+
         // apply a wait cursor, because shutting down the services may take a few seconds (in edge cases)
         QApplication::setOverrideCursor(Qt::WaitCursor);
         const ScopeContext restoreOverrideCursor([]() {
@@ -1635,6 +1728,250 @@ void MainDlg::hideEvent(QHideEvent* event)
     QWidget::hideEvent(event);
 }
 
+#ifdef Q_OS_WIN
+static HICON QIconToHICON(const QIcon& icon, int size)
+{
+    QPixmap pm = icon.pixmap(size, size);
+    return pm.toImage().toHICON();
+}
+
+void MainDlg::InitTaskbarButtons()
+{
+    if (m_thumbBarCreated)
+        return;
+
+    HRESULT hr = CoCreateInstance(CLSID_TaskbarList, nullptr,
+        CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_taskbarList));
+
+    if (FAILED(hr) || !m_taskbarList)
+    {
+        spdlog::error("Failed to create ITaskbarList3: {:#x}", static_cast<unsigned>(hr));
+        return;
+    }
+
+    hr = m_taskbarList->HrInit();
+    if (FAILED(hr))
+    {
+        spdlog::error("ITaskbarList3::HrInit failed: {:#x}", static_cast<unsigned>(hr));
+        m_taskbarList->Release();
+        m_taskbarList = nullptr;
+        return;
+    }
+
+    const int iconSize = 16;
+    HIMAGELIST imageList = ImageList_Create(iconSize, iconSize, ILC_COLOR32, 4, 0);
+
+    // Index 0: Previous
+    HICON hPrev = QIconToHICON(QIcon(":/skip_to_prev.png"), iconSize);
+    ImageList_AddIcon(imageList, hPrev);
+    DestroyIcon(hPrev);
+
+    // Index 1: Play
+    HICON hPlay = QIconToHICON(m_iconPlay, iconSize);
+    ImageList_AddIcon(imageList, hPlay);
+    DestroyIcon(hPlay);
+
+    // Index 2: Next
+    HICON hNext = QIconToHICON(QIcon(":/skip_to_next.png"), iconSize);
+    ImageList_AddIcon(imageList, hNext);
+    DestroyIcon(hNext);
+
+    // Index 3: Pause
+    HICON hPause = QIconToHICON(m_iconPause, iconSize);
+    ImageList_AddIcon(imageList, hPause);
+    DestroyIcon(hPause);
+
+    HWND hwnd = reinterpret_cast<HWND>(winId());
+    m_taskbarList->ThumbBarSetImageList(hwnd, imageList);
+    ImageList_Destroy(imageList);
+
+    THUMBBUTTON buttons[3] = {};
+
+    buttons[0].dwMask = THB_BITMAP | THB_TOOLTIP | THB_FLAGS;
+    buttons[0].iId = THBB_PREV;
+    buttons[0].iBitmap = 0;
+    wcscpy_s(buttons[0].szTip, L"Previous");
+    buttons[0].dwFlags = THBF_ENABLED;
+
+    buttons[1].dwMask = THB_BITMAP | THB_TOOLTIP | THB_FLAGS;
+    buttons[1].iId = THBB_PLAYPAUSE;
+    buttons[1].iBitmap = 1; // Play icon
+    wcscpy_s(buttons[1].szTip, L"Play/Pause");
+    buttons[1].dwFlags = THBF_ENABLED;
+
+    buttons[2].dwMask = THB_BITMAP | THB_TOOLTIP | THB_FLAGS;
+    buttons[2].iId = THBB_NEXT;
+    buttons[2].iBitmap = 2;
+    wcscpy_s(buttons[2].szTip, L"Next");
+    buttons[2].dwFlags = THBF_ENABLED;
+
+    hr = m_taskbarList->ThumbBarAddButtons(hwnd, 3, buttons);
+    if (SUCCEEDED(hr))
+    {
+        m_thumbBarCreated = true;
+        spdlog::info("Taskbar thumbnail toolbar initialized");
+    }
+    else
+    {
+        spdlog::error("ThumbBarAddButtons failed: {:#x}", static_cast<unsigned>(hr));
+    }
+
+    // Enable custom DWM thumbnail preview (album art)
+    BOOL fTrue = TRUE;
+    DwmSetWindowAttribute(hwnd, DWMWA_HAS_ICONIC_BITMAP, &fTrue, sizeof(fTrue));
+    DwmSetWindowAttribute(hwnd, DWMWA_FORCE_ICONIC_REPRESENTATION, &fTrue, sizeof(fTrue));
+}
+
+void MainDlg::UpdateTaskbarOverlayIcon(const QPixmap* albumArt)
+{
+    if (!m_taskbarList || !m_thumbBarCreated)
+        return;
+
+    HWND hwnd = reinterpret_cast<HWND>(winId());
+
+    if (albumArt && !albumArt->isNull())
+    {
+        HICON hIcon = QIconToHICON(QIcon(*albumArt), 32);
+        m_taskbarList->SetOverlayIcon(hwnd, hIcon, L"Album Art");
+        DestroyIcon(hIcon);
+    }
+    else
+    {
+        m_taskbarList->SetOverlayIcon(hwnd, nullptr, nullptr);
+    }
+}
+
+void MainDlg::UpdateTaskbarPlayButton(bool isPlaying)
+{
+    if (!m_taskbarList || !m_thumbBarCreated)
+        return;
+
+    THUMBBUTTON button = {};
+    button.dwMask = THB_BITMAP | THB_TOOLTIP | THB_FLAGS;
+    button.iId = THBB_PLAYPAUSE;
+    button.iBitmap = isPlaying ? 3 : 1; // 3 = Pause icon, 1 = Play icon
+    wcscpy_s(button.szTip, isPlaying ? L"Pause" : L"Play");
+    button.dwFlags = THBF_ENABLED;
+
+    m_taskbarList->ThumbBarUpdateButtons(
+        reinterpret_cast<HWND>(winId()), 1, &button);
+}
+
+void MainDlg::UpdateTaskbarProgress(int currentSeconds, int totalSeconds)
+{
+    if (!m_taskbarList || !m_thumbBarCreated)
+        return;
+
+    HWND hwnd = reinterpret_cast<HWND>(winId());
+
+    if (totalSeconds > 0 && currentSeconds >= 0)
+    {
+        m_taskbarList->SetProgressValue(hwnd,
+            static_cast<ULONGLONG>(currentSeconds),
+            static_cast<ULONGLONG>(totalSeconds));
+    }
+    else
+    {
+        m_taskbarList->SetProgressState(hwnd, TBPF_NOPROGRESS);
+    }
+}
+
+void MainDlg::UpdateTaskbarProgressState(bool isPlaying)
+{
+    if (!m_taskbarList || !m_thumbBarCreated)
+        return;
+
+    HWND hwnd = reinterpret_cast<HWND>(winId());
+    m_taskbarList->SetProgressState(hwnd, isPlaying ? TBPF_NORMAL : TBPF_PAUSED);
+}
+
+void MainDlg::InvalidateTaskbarThumbnail()
+{
+    if (!m_thumbBarCreated)
+        return;
+
+    DwmInvalidateIconicBitmaps(reinterpret_cast<HWND>(winId()));
+}
+
+bool MainDlg::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
+{
+    MSG* msg = static_cast<MSG*>(message);
+
+    if (msg->message == m_taskbarCreatedMsg && m_taskbarCreatedMsg != 0)
+    {
+        InitTaskbarButtons();
+        *result = 0;
+        return true;
+    }
+
+    if (msg->message == WM_COMMAND)
+    {
+        switch (LOWORD(msg->wParam))
+        {
+        case THBB_PREV:
+            SendDacpCommand("previtem"s);
+            return true;
+        case THBB_PLAYPAUSE:
+            SendDacpCommand("playpause"s);
+            return true;
+        case THBB_NEXT:
+            SendDacpCommand("nextitem"s);
+            return true;
+        }
+    }
+
+    // DWM thumbnail preview: provide album art as taskbar thumbnail
+    if (msg->message == WM_DWMSENDICONICTHUMBNAIL)
+    {
+        const int maxWidth = HIWORD(msg->lParam);
+        const int maxHeight = LOWORD(msg->lParam);
+
+        QPixmap thumbnail;
+        {
+            const lock_guard<recursive_mutex> guard(m_mtxTitleInfo);
+            if (m_currentAlbumArt && !m_currentAlbumArt->isNull())
+                thumbnail = *m_currentAlbumArt;
+            else
+                thumbnail = m_pixmapShairport;
+        }
+
+        QPixmap scaled = thumbnail.scaled(maxWidth, maxHeight,
+            Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        HBITMAP hBitmap = scaled.toImage()
+            .convertToFormat(QImage::Format_ARGB32_Premultiplied)
+            .toHBITMAP();
+
+        if (hBitmap)
+        {
+            DwmSetIconicThumbnail(msg->hwnd, hBitmap, 0);
+            DeleteObject(hBitmap);
+        }
+        *result = 0;
+        return true;
+    }
+
+    // DWM Aero Peek: provide live preview bitmap
+    if (msg->message == WM_DWMSENDICONICLIVEPREVIEWBITMAP)
+    {
+        QPixmap windowPixmap = grab();
+        HBITMAP hBitmap = windowPixmap.toImage()
+            .convertToFormat(QImage::Format_ARGB32_Premultiplied)
+            .toHBITMAP();
+
+        if (hBitmap)
+        {
+            POINT offset = { 0, 0 };
+            DwmSetIconicLivePreviewBitmap(msg->hwnd, hBitmap, &offset, 0);
+            DeleteObject(hBitmap);
+        }
+        *result = 0;
+        return true;
+    }
+
+    return QWidget::nativeEvent(eventType, message, result);
+}
+#endif // Q_OS_WIN
+
 // Keyboard-Hook implementation
 void MainDlg::OnKeyPressed(KeyboardHook::Key key) noexcept
 {
@@ -1676,6 +2013,18 @@ void MainDlg::OnKeyPressed(KeyboardHook::Key key) noexcept
     catch (...)
     {
         spdlog::error("OnKeyPressed: failed to send DACP command for key {}", (int)key);
+    }
+}
+
+void MainDlg::OnMediaCommand(const std::string& command) noexcept
+{
+    try
+    {
+        SendDacpCommand(command);
+    }
+    catch (...)
+    {
+        spdlog::error("OnMediaCommand: failed to send command: {}", command);
     }
 }
 

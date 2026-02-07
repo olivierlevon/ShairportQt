@@ -28,7 +28,12 @@ OS and follow these instructions:
 
 Just copy the file `ShairportQt.exe` to your filesystem and create a Desktop-Link. That's it.
 
-Shairport depends on Apple's [`Bonjour`](https://support.apple.com/kb/DL999). Just start `ShairportQt`... it will guide you in case `Bonjour`
+Shairport depends on Apple's `Bonjour` service. Install it via one of these methods:
+
+- **Chocolatey**: `choco install bonjour` ([package](https://community.chocolatey.org/packages/bonjour/))
+- **iTunes desktop installer**: download from [apple.com](https://www.apple.com/itunes/download/win64/) (do **not** use the Microsoft Store version of iTunes — it bundles a reduced Bonjour that only works for Apple apps and does not install the system-wide Bonjour service)
+
+Just start `ShairportQt`... it will guide you in case `Bonjour`
 is not installed on your machine. Please retry to start `ShairportQt.exe` after
 installation of `Bonjour`.
 
@@ -121,8 +126,9 @@ It works very well on Linux and Windows.
    ```
 
 5. **Apple Bonjour SDK** - the Bonjour header (`dns_sd.h`) is already included in the repository under `lib/Bonjour/`.
-   At runtime you need [Bonjour for Windows](https://support.apple.com/kb/DL999) installed,
-   which provides `dnssd.dll`.
+   At runtime you need Bonjour for Windows installed (provides `dnssd.dll`).
+   Install via [Chocolatey](https://community.chocolatey.org/packages/bonjour/) (`choco install bonjour`)
+   or the [iTunes desktop installer](https://www.apple.com/itunes/download/win64/) (not the Microsoft Store version).
 
 #### Option A - Open as CMake project in Visual Studio
 
@@ -232,6 +238,19 @@ The multimedia buttons at the bottom of the main window are being used to remote
 your connected device. This also applies to the volume buttons, so it's
 *not* your local volume which will increase/decrease.
 
+### OS Media Integration
+
+ShairportQt integrates with each platform's native media controls, so track info, album art, and
+playback controls appear system-wide:
+
+- **Windows**: System Media Transport Controls (SMTC) — media info appears in the volume flyout and
+  lock screen. Taskbar thumbnail toolbar provides Previous/Play-Pause/Next buttons, and the current
+  album art is shown as a taskbar overlay icon.
+- **Linux**: MPRIS D-Bus interface (`org.mpris.MediaPlayer2.ShairportQt`) — media info appears in
+  desktop environment widgets (GNOME, KDE, etc.) and can be controlled via `playerctl`.
+- **macOS**: MPNowPlayingInfoCenter — media info appears in Control Center and supports
+  play/pause/next/previous from the keyboard or Touch Bar.
+
 ShairportQt allows you to start multiple process-instances with different configurations. All you need to
 do is to provide a name for your instance configuration by applying the command line parameter
 `-config=MyConfigurationName`. The allowed characters for the configuration-name
@@ -239,10 +258,12 @@ are limited to characters `A-Z`, `a-z` and `0-9`.
 
 ### Avahi (aka Bonjour)
 
-For Windows you may need to download and install [`Bonjour`](https://support.apple.com/kb/DL999). 
-When being asked during the installation ... just dismiss the option to automatically update Bonjour's files in the background. 
-Which may save you from having another unnecessary process running on your machine.
-A desktop-link for Bonjour is also completely unnecessary.
+For Windows you may need to install Bonjour. The recommended methods are:
+
+- **Chocolatey**: `choco install bonjour` ([package](https://community.chocolatey.org/packages/bonjour/))
+- **iTunes desktop installer**: download from [apple.com](https://www.apple.com/itunes/download/win64/)
+
+**Important**: do **not** use the Microsoft Store version of iTunes. It bundles a reduced Bonjour that only serves Apple applications and does not install the system-wide `Bonjour Service` (mDNSResponder) needed by third-party software like ShairportQt.
 
 On my Raspbian ... I had to install `libavahi-compat-libdnssd-dev`.
 

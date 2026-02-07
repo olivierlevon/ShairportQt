@@ -23,6 +23,8 @@
 //
 #include <QApplication>
 #include <QMessageBox>
+#include <QSysInfo>
+#include <openssl/crypto.h>
 
 using namespace std;
 using namespace string_literals;
@@ -83,6 +85,7 @@ int main(int argc, char** argv)
 
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
+    RegisterApplicationRestart(nullptr, RESTART_NO_CRASH | RESTART_NO_HANG);
 #endif
     setlocale(LC_ALL, "C");
 
@@ -118,8 +121,20 @@ int main(int argc, char** argv)
         // make our logger the default-logger
         spdlog::set_default_logger(logger);
 
-        spdlog::info("Starting ...");
-        
+        spdlog::info("ShairportQt version {}", SHAIRPORTQT_VERSION);
+        spdlog::info("OS: {} ({})", QSysInfo::prettyProductName().toStdString(),
+            QSysInfo::currentCpuArchitecture().toStdString());
+#if defined(_MSC_VER)
+        spdlog::info("Compiler: MSVC {}.{}", _MSC_VER / 100, _MSC_VER % 100);
+#elif defined(__clang__)
+        spdlog::info("Compiler: Clang {}.{}.{}", __clang_major__, __clang_minor__, __clang_patchlevel__);
+#elif defined(__GNUC__)
+        spdlog::info("Compiler: GCC {}.{}.{}", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+#endif
+        spdlog::info("Qt version: {} (built against {})", qVersion(), QT_VERSION_STR);
+        spdlog::info("OpenSSL version: {}", OpenSSL_version(OPENSSL_VERSION));
+        spdlog::info("spdlog version: {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
+
         // loading the config
         config = LoadConfig();
 

@@ -22,8 +22,11 @@ namespace Localization::Spanish
 
 		case StringID::BONJOUR_INSTALL:
 #ifdef _WIN32
-			return R"(<p>Por favor, instala Bonjour para Windows desde este enlace:</p>
-                      <p><a href="https://support.apple.com/kb/DL999">https://support.apple.com/kb/DL999</a></p>)"s;
+			return R"(<p>Por favor, instala Bonjour para Windows:</p>
+                      <ul>
+                      <li>Con <a href="https://community.chocolatey.org/packages/bonjour/">Chocolatey</a>: <code>choco install bonjour</code></li>
+                      <li>O instala <a href="https://www.apple.com/itunes/download/win64/">iTunes para Windows</a> (versi&oacute;n de escritorio, no la de Microsoft Store)</li>
+                      </ul>)"s;
 #else
 			return "Por favor, instala el servicio avahi-daemon y la librería libavahi-compat-libdnssd-dev."s;
 #endif

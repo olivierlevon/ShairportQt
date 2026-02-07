@@ -29,17 +29,22 @@
 #include "dnssd.h"
 #include "DacpService.h"
 #include "KeyboardHook.h"
+#include "MediaIntegration.h"
 
 class TimeLabel;
+#ifdef Q_OS_WIN
+struct ITaskbarList3;
+#endif
 
 //
 // based on Qt example: https://doc.qt.io/qt-6/qtwidgets-layouts-basiclayouts-example.html
 //
-class MainDlg 
+class MainDlg
     : public QWidget
     , public IRaopEvents
     , public IDnsSDEvents
     , protected KeyboardHook::ICallback
+    , public IMediaCommandCallback
 {
     Q_OBJECT
 
@@ -86,9 +91,15 @@ protected:
     void closeEvent(QCloseEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
+#ifdef Q_OS_WIN
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
+#endif
 
     // Keyboard-Hook implementation
     void OnKeyPressed(KeyboardHook::Key key) noexcept override;
+
+    // IMediaCommandCallback implementation
+    void OnMediaCommand(const std::string& command) noexcept override;
 
 signals:
     void ShowMessage(int text) const;
@@ -148,6 +159,7 @@ private:
     DnsHandlePtr                        m_dacpBrowser;
     std::shared_ptr<RaopServer>         m_raopServer;
     std::unique_ptr<std::thread>        m_scheduler;
+    MediaIntegrationPtr                 m_mediaIntegration;
     
     // Qt Widgets
     // Menu
@@ -206,4 +218,18 @@ private:
     // Tray
     QPointer<QSystemTrayIcon>           m_systemTray;
     TimePoint                           m_timepointTrayContextMenuClosed;
+
+#ifdef Q_OS_WIN
+    // Taskbar integration
+    void InitTaskbarButtons();
+    void UpdateTaskbarPlayButton(bool isPlaying);
+    void UpdateTaskbarOverlayIcon(const QPixmap* albumArt);
+    void UpdateTaskbarProgress(int currentSeconds, int totalSeconds);
+    void UpdateTaskbarProgressState(bool isPlaying);
+    void InvalidateTaskbarThumbnail();
+
+    UINT                                m_taskbarCreatedMsg{ 0 };
+    ITaskbarList3*                      m_taskbarList{ nullptr };
+    bool                                m_thumbBarCreated{ false };
+#endif
 };
