@@ -3,6 +3,7 @@
 #include "crypto.h"
 #include "Trim.h"
 #include "HairTunes.h"
+#include "dnssd.h"
 #include <spdlog/spdlog.h>
 #include "libutils.h"
 #include "definitions.h"
@@ -713,8 +714,11 @@ void RaopServer::Run() noexcept
 					}
 					else
 					{
-						spdlog::error("*Failed* to publish RAOP Service \"{}\" with code {}",
-							VariantValue::Key("APname").Get<string>(m_config), dnsSDHandle->ErrorCode());
+						spdlog::error("*Failed* to publish RAOP Service \"{}\": {} ({})",
+							VariantValue::Key("APname").Get<string>(m_config), DnsSDErrorString(dnsSDHandle->ErrorCode()), dnsSDHandle->ErrorCode());
+
+						// stop the HTTP server — no point running without a published service
+						m_srvHttp->stop();
 					}
 				}
 				return dnsSDHandle;

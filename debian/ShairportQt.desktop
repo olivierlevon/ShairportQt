@@ -2,6 +2,12 @@
 Type=Application
 Name=ShairportQt
 Comment=AirPlay Receiver
+Comment[de]=AirPlay-Empfänger
+Comment[es]=Receptor AirPlay
+Comment[ca]=Receptor AirPlay
+Comment[fr]=Récepteur AirPlay
+Comment[it]=Ricevitore AirPlay
+Comment[ja]=AirPlayレシーバー
 Icon=/usr/share/icons/hicolor/256x256/apps/org.shairport.ShairportQt.png
 Exec=/usr/bin/ShairportQt
 Terminal=false

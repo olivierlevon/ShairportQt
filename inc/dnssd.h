@@ -17,7 +17,8 @@ public:
         uint32_t interfaceIndex,
         const char* serviceName,
         const char* regtype,
-        const char* replyDomain) noexcept
+        const char* replyDomain,
+        bool moreComing) noexcept
     {
         // override when you call BrowseForService
         assert(false);

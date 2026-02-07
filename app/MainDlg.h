@@ -77,7 +77,8 @@ protected:
         uint32_t interfaceIndex,
         const char* serviceName,
         const char* regtype,
-        const char* replyDomain) noexcept override;
+        const char* replyDomain,
+        bool moreComing) noexcept override;
     void OnDnsSDError(int32_t errorCode) noexcept override;
 
 protected:

@@ -112,6 +112,12 @@ private:
                                                 (
                                                     TXTRecordRef     *txtRecord
                                                 );
+    typedef DNSServiceErrorType (DNSSD_API *_typeDNSServiceGetProperty)
+                                                (
+                                                    const char       *property,
+                                                    void             *result,
+                                                    uint32_t         *size
+                                                );
 
 #ifndef _WIN32
     typedef void* HMODULE;
@@ -154,11 +160,12 @@ public:
 	    m_funcTXTRecordGetLength        = (_typeTXTRecordGetLength) GetProcAddress(m_module, "TXTRecordGetLength");
 	    m_funcTXTRecordGetBytesPtr      = (_typeTXTRecordGetBytesPtr) GetProcAddress(m_module, "TXTRecordGetBytesPtr");
 	    m_funcTXTRecordDeallocate       = (_typeTXTRecordDeallocate) GetProcAddress(m_module, "TXTRecordDeallocate");
+        m_funcDNSServiceGetProperty     = (_typeDNSServiceGetProperty) GetProcAddress(m_module, "DNSServiceGetProperty");
 
         if (!m_funcDNSServiceRegister || !m_funcDNSServiceRefDeallocate || !m_funcDNSServiceRefSockFD ||
             !m_funcDNSServiceProcessResult || !m_funcDNSServiceQueryRecord || !m_funcDNSServiceResolve ||
             !m_funcDNSServiceBrowse || !m_funcTXTRecordCreate || !m_funcTXTRecordSetValue || !m_funcTXTRecordGetLength ||
-            !m_funcTXTRecordGetBytesPtr || !m_funcTXTRecordDeallocate) 
+            !m_funcTXTRecordGetBytesPtr || !m_funcTXTRecordDeallocate)
         {
             Unload();
             throw runtime_error("Could not load dnssd shared library functions");
@@ -208,12 +215,35 @@ public:
 	_typeTXTRecordGetLength         m_funcTXTRecordGetLength        = nullptr;
 	_typeTXTRecordGetBytesPtr       m_funcTXTRecordGetBytesPtr      = nullptr;
 	_typeTXTRecordDeallocate        m_funcTXTRecordDeallocate       = nullptr;
+    _typeDNSServiceGetProperty      m_funcDNSServiceGetProperty     = nullptr;
 
 };
+
+static string FormatDnsSDVersion(uint32_t version)
+{
+    if (version > DNS_SD_ORIGINAL_ENCODING_VERSION_NUMBER_MAX)
+        return to_string(version / 1000000) + "." + to_string((version / 1000) % 1000) + "." + to_string(version % 1000);
+    else
+        return to_string(version / 10000) + "." + to_string((version / 100) % 100) + "." + to_string(version % 100);
+}
 
 DnsSD::DnsSD()
     : m_descriptor{ make_unique<Descriptor>() }
 {
+    spdlog::info("DNS-SD library version: {}", FormatDnsSDVersion(_DNS_SD_H));
+
+    if (m_descriptor->m_funcDNSServiceGetProperty)
+    {
+        uint32_t daemonVersion = 0;
+        uint32_t size = sizeof(daemonVersion);
+
+        const auto err = m_descriptor->m_funcDNSServiceGetProperty(kDNSServiceProperty_DaemonVersion, &daemonVersion, &size);
+
+        if (err == kDNSServiceErr_NoError)
+            spdlog::info("DNS-SD daemon version: {}", FormatDnsSDVersion(daemonVersion));
+        else
+            spdlog::warn("DNS-SD daemon version: {} ({})", DnsSDErrorString(err), static_cast<int>(err));
+    }
 }
 
 DnsSD::~DnsSD()
@@ -343,15 +373,20 @@ static void DNSSD_API MyDNSServiceBrowseReply
 
     IDnsSDEvents* cb = (IDnsSDEvents*)context;
 
+    spdlog::debug("DNSServiceBrowseReply: flags={:#x} interfaceIndex={} errorCode={} serviceName=\"{}\" regtype=\"{}\" replyDomain=\"{}\"",
+        flags, interfaceIndex, static_cast<int>(errorCode),
+        serviceName ? serviceName : "", regtype ? regtype : "", replyDomain ? replyDomain : "");
+
     if (errorCode != kDNSServiceErr_NoError)
     {
-        spdlog::error("DNSServiceBrowseReply: {}", DnsSDErrorString(errorCode));
+        spdlog::error("DNSServiceBrowseReply: {} ({})", DnsSDErrorString(errorCode), static_cast<int>(errorCode));
         cb->OnDnsSDError(static_cast<int32_t>(errorCode));
         return;
     }
     const bool registered = (flags & kDNSServiceFlagsAdd) ? true : false;
+    const bool moreComing = (flags & kDNSServiceFlagsMoreComing) ? true : false;
 
-    cb->OnDNSServiceBrowseReply(registered, interfaceIndex, serviceName, regtype, replyDomain);
+    cb->OnDNSServiceBrowseReply(registered, interfaceIndex, serviceName, regtype, replyDomain, moreComing);
 }
 
 DnsHandlePtr DnsSD::BrowseForService(const char* strRegType, IDnsSDEvents* cb)
@@ -360,7 +395,7 @@ DnsHandlePtr DnsSD::BrowseForService(const char* strRegType, IDnsSDEvents* cb)
 
     DNSServiceRef sdRef = nullptr;
 
-    const auto error = m_descriptor->m_funcDNSServiceBrowse(&sdRef, 0, 0, strRegType, NULL, MyDNSServiceBrowseReply, cb);
+    const auto error = m_descriptor->m_funcDNSServiceBrowse(&sdRef, 0, kDNSServiceInterfaceIndexAny, strRegType, NULL, MyDNSServiceBrowseReply, cb);
 
     return make_shared<DnsSDHandle>(this, static_cast<void*>(sdRef), static_cast<int32_t>(error));
 }
@@ -383,9 +418,13 @@ static void DNSSD_API MyDNSServiceResolveReply
 
     IDnsSDEvents* cb = (IDnsSDEvents*)context;
 
+    spdlog::debug("DNSServiceResolveReply: flags={:#x} interfaceIndex={} errorCode={} fullname=\"{}\" hosttarget=\"{}\" port={} txtLen={}",
+        flags, interfaceIndex, static_cast<int>(errorCode),
+        fullname ? fullname : "", hosttarget ? hosttarget : "", SWAP16(port), txtLen);
+
     if (errorCode != kDNSServiceErr_NoError)
     {
-        spdlog::error("DNSServiceResolveReply: {}", DnsSDErrorString(errorCode));
+        spdlog::error("DNSServiceResolveReply: {} ({})", DnsSDErrorString(errorCode), static_cast<int>(errorCode));
         cb->OnDnsSDError(static_cast<int32_t>(errorCode));
         return;
     }
@@ -423,10 +462,20 @@ static void DNSSD_API MyDNSServiceQueryRecordReply
 
     IDnsSDEvents* cb = (IDnsSDEvents*)context;
 
+    spdlog::debug("DNSServiceQueryRecordReply: flags={:#x} interfaceIndex={} errorCode={} fullname=\"{}\" rrtype={} rrclass={} rdlen={} ttl={}",
+        flags, interfaceIndex, static_cast<int>(errorCode),
+        fullname ? fullname : "", rrtype, rrclass, rdlen, ttl);
+
     if (errorCode != kDNSServiceErr_NoError)
     {
-        spdlog::error("DNSServiceQueryRecordReply: {}", DnsSDErrorString(errorCode));
+        spdlog::error("DNSServiceQueryRecordReply: {} ({})", DnsSDErrorString(errorCode), static_cast<int>(errorCode));
         cb->OnDnsSDError(static_cast<int32_t>(errorCode));
+        return;
+    }
+    if (!(flags & kDNSServiceFlagsAdd))
+    {
+        // record was removed — notify with empty host
+        cb->OnServiceQueryRecord(string{});
         return;
     }
     string host;
@@ -528,6 +577,11 @@ void DnsSDHandle::Init(void* h, int32_t e)
             {
                 const Networking::socket_t socket = m_dnsSD->m_descriptor->m_funcDNSServiceRefSockFD(static_cast<DNSServiceRef>(m_handle));
 
+                if (socket == static_cast<Networking::socket_t>(-1))
+                {
+                    spdlog::error("DNSServiceRefSockFD failed: invalid socket");
+                    return;
+                }
                 Networking::SetSocketBlockingEnabled(socket, false);
 
                 DNSServiceErrorType err = kDNSServiceErr_NoError;
@@ -553,7 +607,7 @@ void DnsSDHandle::Init(void* h, int32_t e)
 
                 if (err != kDNSServiceErr_NoError && !m_stop)
                 {
-                    spdlog::error("DNSServiceProcessResult: {}", DnsSDErrorString(err));
+                    spdlog::error("DNSServiceProcessResult: {} ({})", DnsSDErrorString(err), static_cast<int>(err));
                 }
             });
     }

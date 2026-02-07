@@ -704,11 +704,18 @@ void MainDlg::ConfigureDacpBrowser()
 
         if (!dacpBrowser->Succeeded())
         {
-            spdlog::error("Main Dialog: failed to start DACP Browser with code: {}", dacpBrowser->ErrorCode());
+            spdlog::error("Main Dialog: failed to start DACP Browser: {} ({})", DnsSDErrorString(dacpBrowser->ErrorCode()), dacpBrowser->ErrorCode());
 
             if (!m_isHidden)
             {
-                emit ShowMessage(StringID::FAILED_TO_START_DACP_BROWSER);
+                if (dacpBrowser->ErrorCode() == kDNSServiceErr_ServiceNotRunning)
+                {
+                    emit ShowMessage(StringID::TROUBLE_SHOOT_RAOP_SERVICE);
+                }
+                else
+                {
+                    emit ShowMessage(StringID::FAILED_TO_START_DACP_BROWSER);
+                }
             }
         }
         else
@@ -987,7 +994,8 @@ void MainDlg::OnDNSServiceBrowseReply(
     uint32_t interfaceIndex,
     const char* servicename,
     const char* regtype,
-    const char* replydomain) noexcept
+    const char* replydomain,
+    bool moreComing) noexcept
 {
     if (servicename)
     {
@@ -1039,7 +1047,7 @@ void MainDlg::OnDNSServiceBrowseReply(
                     {
                         dacpService.swap(m_mapDacpService[dacpID]);
 
-                        if (dacpID == m_currentDacpID.id)
+                        if (!moreComing && dacpID == m_currentDacpID.id)
                         {
                             sync.unlock();
 
@@ -1059,7 +1067,7 @@ void MainDlg::OnDNSServiceBrowseReply(
             {
                 spdlog::info("Main Dialog: OnDNSServiceBrowseReply unregistered: {}"s, serviceName);
 
-                auto asyncRemove = async(launch::async, [this](const uint64_t dacpID) -> void
+                auto asyncRemove = async(launch::async, [this, moreComing](const uint64_t dacpID) -> void
                     {
                         DacpServicePtr	dacpService;
 
@@ -1078,7 +1086,7 @@ void MainDlg::OnDNSServiceBrowseReply(
                         {
                             dacpService.reset();
 
-                            if (!m_dialogClosed)
+                            if (!moreComing && !m_dialogClosed)
                             {
                                 try
                                 {
@@ -1110,7 +1118,7 @@ void MainDlg::OnDnsSDError(int32_t errorCode) noexcept
 {
     if (errorCode == kDNSServiceErr_ServiceNotRunning)
     {
-        spdlog::error("DNS-SD: {}", DnsSDErrorString(errorCode));
+        spdlog::error("DNS-SD: {} ({})", DnsSDErrorString(errorCode), errorCode);
 
         if (!m_dialogClosed)
         {
@@ -1125,7 +1133,7 @@ void MainDlg::OnDnsSDError(int32_t errorCode) noexcept
     }
     else
     {
-        spdlog::error("DNS-SD: {}", DnsSDErrorString(errorCode));
+        spdlog::error("DNS-SD: {} ({})", DnsSDErrorString(errorCode), errorCode);
     }
 }
 

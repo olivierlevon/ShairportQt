@@ -81,6 +81,9 @@ int main(int argc, char** argv)
     // set random seed
     srand(std::random_device{}());
 
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
     setlocale(LC_ALL, "C");
 
     int result = -1;
