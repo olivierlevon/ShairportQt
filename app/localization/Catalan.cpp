@@ -120,6 +120,9 @@ namespace Localization::Catalan
 		case StringID::LABEL_SOUND_DEVICE:
 			return "Dispositiu de So"s;
 
+		case StringID::LABEL_AUDIO_BACKEND:
+			return "Sortida d'\xC3\xA0udio"s;
+
 		case StringID::LABEL_LOG_TO_FILE:
 			return "Guardar registres a fitxer"s;
 

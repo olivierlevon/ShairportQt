@@ -134,6 +134,9 @@ int main(int argc, char** argv)
         spdlog::info("Qt version: {} (built against {})", qVersion(), QT_VERSION_STR);
         spdlog::info("OpenSSL version: {}", OpenSSL_version(OPENSSL_VERSION));
         spdlog::info("spdlog version: {}.{}.{}", SPDLOG_VER_MAJOR, SPDLOG_VER_MINOR, SPDLOG_VER_PATCH);
+#ifdef _WIN32
+        spdlog::info("Available audio backends: waveOut, WASAPI Exclusive, ASIO (cwASIO)");
+#endif
 
         // loading the config
         config = LoadConfig();

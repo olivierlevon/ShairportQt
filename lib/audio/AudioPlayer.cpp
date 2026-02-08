@@ -3,14 +3,23 @@
 #include <mmeapi.h>
 #include "audio/AudioPlayer.h"
 #include "audio/PlaySound.h"
+#include "audio/AudioBackend.h"
 #include <functional>
 #include <list>
 #include <vector>
 #include "audio/WaveHeader.h"
 #include <Mmdeviceapi.h>
 #include <FunctionDiscoveryKeys_devpkey.h>
+#include <spdlog/spdlog.h>
 
 #pragma comment(lib, "Winmm.lib")
+
+// forward declarations for WASAPI and ASIO backends
+std::future<int> WasapiPlay(IStream* stream, const std::string& device);
+std::map<std::string, std::string> WasapiListDevices();
+
+std::future<int> AsioPlay(IStream* stream, const std::string& device);
+std::map<std::string, std::string> AsioListDevices();
 
 #define NUM_CHANNELS	2
 #define	SAMPLE_SIZE		16
@@ -635,8 +644,19 @@ bool AudioPlayer::OnPlayAudio(unsigned char* pData, ULONG dwLen)
 
 namespace AlsaAudio
 {
-	future<int> Play(IStream* stream, string device /*= "default"*/)
+	future<int> Play(IStream* stream, string device /*= "default"*/, AudioBackend backend /*= AudioBackend::WaveOut*/)
 	{
+		if (backend == AudioBackend::WasapiExclusive)
+		{
+			spdlog::debug("Playing audio via WASAPI Exclusive, device: {}", device);
+			return WasapiPlay(stream, device);
+		}
+		if (backend == AudioBackend::Asio)
+		{
+			spdlog::debug("Playing audio via ASIO, device: {}", device);
+			return AsioPlay(stream, device);
+		}
+
 		future<int> result;
 
 		if (stream)
@@ -671,19 +691,20 @@ namespace AlsaAudio
 		return result;
 	}
 
-	future<int> Play(const void* buf, size_t bufsize, string device /*= "default"*/)
+	future<int> Play(const void* buf, size_t bufsize, string device /*= "default"*/, AudioBackend backend /*= AudioBackend::WaveOut*/)
 	{
 		SharedPtr<BlobStream> stream = new BlobStream(bufsize, buf);
-		return Play(stream, device);
+		return Play(stream, device, backend);
 	}
 
-	future<int> Play(string file_path, string device /*= "default"*/)
+	future<int> Play(string file_path, string device /*= "default"*/, AudioBackend backend /*= AudioBackend::WaveOut*/)
 	{
 		SharedPtr<BlobStream> stream = new BlobStream();
 		stream->FromFile(file_path);
-		return Play(stream, device);
+		return Play(stream, device, backend);
 	}
-}
+
+} // namespace AlsaAudio
 
 static void GetFullAudioDeviceByShortName(wstring& strDevname, string* pVarAudioID = nullptr)
 {
@@ -778,7 +799,7 @@ static void GetFullAudioDeviceByShortName(wstring& strDevname, string* pVarAudio
 	}
 }
 
-map<string, string> AlsaAudio::ListDevices()
+static map<string, string> WaveOutListDevices()
 {
 	map<string, string> result;
 
@@ -804,6 +825,19 @@ map<string, string> AlsaAudio::ListDevices()
 		}
 	}
 	return result;
+}
+
+map<string, string> AlsaAudio::ListDevices(AudioBackend backend /*= AudioBackend::WaveOut*/)
+{
+	switch (backend)
+	{
+	case AudioBackend::WasapiExclusive:
+		return WasapiListDevices();
+	case AudioBackend::Asio:
+		return AsioListDevices();
+	default:
+		return WaveOutListDevices();
+	}
 }
 
 static UINT GetDeviceID(const string& device)

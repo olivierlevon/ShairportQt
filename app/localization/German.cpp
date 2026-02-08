@@ -121,6 +121,9 @@ namespace Localization::German
 		case StringID::LABEL_SOUND_DEVICE:
 			return "Ausgabe Ger"s + CW2AEX(L"\xe4"s) + "t"s;
 
+		case StringID::LABEL_AUDIO_BACKEND:
+			return "Audio-Ausgabe"s;
+
 		case StringID::LABEL_LOG_TO_FILE:
 			return "Log Datei"s;		
 

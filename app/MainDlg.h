@@ -88,6 +88,7 @@ protected:
 
 protected:
     // QWidget overrides
+    bool eventFilter(QObject* obj, QEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
@@ -165,6 +166,7 @@ private:
     // Menu
     // read about the Qt Object Model: https://doc.qt.io/qt-6/object.html
     QPointer<QMenuBar>                  m_menuBar;
+    QPointer<QAction>                   m_actionAlwaysOnTop;
 
     // Status Group
     QPointer<QGroupBox>                 m_groupBoxStatus;

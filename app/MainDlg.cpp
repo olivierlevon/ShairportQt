@@ -11,6 +11,10 @@
 #include <QSlider>
 #include <QComboBox>
 #include <QUrl>
+#include <QClipboard>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QToolButton>
 
 #include "localization/StringIDs.h"
 #include <dns_sd.h>
@@ -20,6 +24,9 @@
 #include "TimeLabel.h"
 #include "definitions.h"
 #include "audio/PlaySound.h"
+#ifdef Q_OS_WIN
+#include "audio/AudioBackend.h"
+#endif
 #include <time.h>
 
 #ifdef Q_OS_WIN
@@ -387,6 +394,47 @@ void MainDlg::CreateMenuBar()
     m_menuBar->addMenu(fileMenu);
     m_menuBar->addMenu(editMenu);
     m_menuBar->addMenu(helpMenu);
+
+    // Always-on-top toggle (pushpin) on the right side of the menu bar
+    m_actionAlwaysOnTop = new QAction(this);
+    m_actionAlwaysOnTop->setCheckable(true);
+    m_actionAlwaysOnTop->setChecked(VariantValue::Key("KeepSticky").TryGet<bool>(m_config).value_or(false));
+    m_actionAlwaysOnTop->setToolTip(GetString(StringID::LABEL_KEEP_STICKY));
+
+    // Use unicode pushpin characters for the icon text
+    auto updatePinText = [this]()
+    {
+        const bool pinned = m_actionAlwaysOnTop->isChecked();
+        m_actionAlwaysOnTop->setText(pinned
+            ? QString::fromUtf8("\xF0\x9F\x93\x8C")   // U+1F4CC pushpin (pinned)
+            : QString::fromUtf8("\xF0\x9F\x93\x8C"));  // U+1F4CC pushpin (unpinned)
+        m_actionAlwaysOnTop->setToolTip(pinned
+            ? GetString(StringID::LABEL_KEEP_STICKY) + QString(" (ON)")
+            : GetString(StringID::LABEL_KEEP_STICKY) + QString(" (OFF)"));
+    };
+    updatePinText();
+
+    connect(m_actionAlwaysOnTop, &QAction::toggled, [this, updatePinText](bool checked)
+        {
+            VariantValue::Key("KeepSticky").Set(m_config, checked);
+
+            if (checked)
+            {
+                setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
+            }
+            else
+            {
+                setWindowFlags(windowFlags() & ~Qt::WindowStaysOnTopHint);
+            }
+            show();
+            updatePinText();
+        });
+
+    // Add pushpin button to the right corner of the menu bar
+    QPointer<QToolButton> pinButton = new QToolButton(m_menuBar);
+    pinButton->setDefaultAction(m_actionAlwaysOnTop);
+    pinButton->setAutoRaise(true);
+    m_menuBar->setCornerWidget(pinButton);
 }
 
 void MainDlg::WidgetCreateStatusGroup()
@@ -535,6 +583,18 @@ void MainDlg::WidgetCreateTitleInfoGroup()
             m_labelArtistTitleInfo->setSizePolicy(QSizePolicy::Policy::Expanding, QSizePolicy::Policy::Expanding);
             m_labelTrackTitleInfo->setSizePolicy(QSizePolicy::Policy::Expanding, QSizePolicy::Policy::Expanding);
             m_labelAlbumTitleInfo->setSizePolicy(QSizePolicy::Policy::Expanding, QSizePolicy::Policy::Expanding);
+
+            // Make labels clickable and copyable (context menu)
+            m_labelArtistTitleInfo->setToolTip(tr("Artist (click to search on Wikipedia)"));
+            m_labelTrackTitleInfo->setToolTip(tr("Song (click to search on Spotify)"));
+            m_labelAlbumTitleInfo->setToolTip(tr("Album (click to search on Spotify)"));
+
+            for (auto* label : { m_labelArtistTitleInfo.data(), m_labelTrackTitleInfo.data(), m_labelAlbumTitleInfo.data() })
+            {
+                label->setCursor(Qt::PointingHandCursor);
+                label->setContextMenuPolicy(Qt::CustomContextMenu);
+                label->installEventFilter(this);
+            }
 
             m_titleInfoLayout->addWidget(m_labelArtistTitleInfo);
             m_titleInfoLayout->addWidget(m_labelTrackTitleInfo);
@@ -1555,6 +1615,18 @@ void MainDlg::OnProgressInfo(int currentSeconds, int totalSeconds, QString conne
             m_progressBarTitleInfo->setMaximum(totalSeconds);
         }
         m_progressBarTitleInfo->setValue(currentSeconds);
+
+        // Tooltip on TimeLabel: contextual based on display mode
+        const bool remainingMode = VariantValue::Key("RemainTimeMode").TryGet<bool>(m_config).value_or(true);
+
+        if (remainingMode)
+        {
+            m_labelTotalTimeTitleInfo->setToolTip(tr("Time left"));
+        }
+        else
+        {
+            m_labelTotalTimeTitleInfo->setToolTip(tr("Total time"));
+        }
     }
     else
     {
@@ -1567,6 +1639,7 @@ void MainDlg::OnProgressInfo(int currentSeconds, int totalSeconds, QString conne
             m_labelProgessTimeTitleInfo->setText(TimeLabel::undefinedTimeLabel);
         }
         m_progressBarTitleInfo->setValue(0);
+        m_labelTotalTimeTitleInfo->setToolTip(QString());
     }
 
     if (connectedClient.isEmpty())
@@ -1595,6 +1668,102 @@ void MainDlg::OnQuit()
         m_systemTray->hide();
     }
     close();
+}
+
+// Event filter for title info labels: click -> Wikipedia (artist) / Spotify (song/album), right-click -> copy
+bool MainDlg::eventFilter(QObject* obj, QEvent* event)
+{
+    auto* label = qobject_cast<QLabel*>(obj);
+
+    if (label && (label == m_labelArtistTitleInfo || label == m_labelTrackTitleInfo || label == m_labelAlbumTitleInfo))
+    {
+        if (event->type() == QEvent::MouseButtonRelease)
+        {
+            auto* mouseEvent = static_cast<QMouseEvent*>(event);
+
+            if (mouseEvent->button() == Qt::LeftButton)
+            {
+                const QString text = label->text().trimmed();
+
+                if (!text.isEmpty())
+                {
+                    if (label == m_labelArtistTitleInfo)
+                    {
+                        // Artist: open Wikipedia search in current UI language
+                        const auto lang = GetLanguageManager(m_config)->GetCurrentLanguage();
+                        const auto langCode = QString::fromStdString(lang).section('-', 0, 0);
+
+                        const QUrl url(QString("https://%1.wikipedia.org/wiki/Special:Search?search=%2")
+                            .arg(langCode)
+                            .arg(QUrl::toPercentEncoding(text)));
+
+                        QDesktopServices::openUrl(url);
+                    }
+                    else
+                    {
+                        // Song / Album: open Spotify Web search
+                        const QUrl url(QString("https://open.spotify.com/search/%1")
+                            .arg(QUrl::toPercentEncoding(text)));
+
+                        QDesktopServices::openUrl(url);
+                    }
+                }
+                return true;
+            }
+            else if (mouseEvent->button() == Qt::RightButton)
+            {
+                // Right click: context menu with copy options
+                const lock_guard<recursive_mutex> guard(m_mtxTitleInfo);
+
+                QMenu menu(this);
+
+                if (!m_strCurrentArtist.isEmpty() || !m_strCurrentTrack.isEmpty() || !m_strCurrentAlbum.isEmpty())
+                {
+                    // Copy individual field
+                    const QString text = label->text().trimmed();
+
+                    if (!text.isEmpty())
+                    {
+                        menu.addAction(tr("Copy"), [text]()
+                            {
+                                QApplication::clipboard()->setText(text);
+                            });
+                    }
+
+                    // Copy all track info
+                    menu.addAction(tr("Copy All"), [this]()
+                        {
+                            const lock_guard<recursive_mutex> guard(m_mtxTitleInfo);
+
+                            QString info;
+
+                            if (!m_strCurrentArtist.isEmpty())
+                                info += m_strCurrentArtist;
+
+                            if (!m_strCurrentTrack.isEmpty())
+                            {
+                                if (!info.isEmpty()) info += tr(" - ");
+                                info += m_strCurrentTrack;
+                            }
+
+                            if (!m_strCurrentAlbum.isEmpty())
+                            {
+                                if (!info.isEmpty()) info += tr(" - ");
+                                info += m_strCurrentAlbum;
+                            }
+                            QApplication::clipboard()->setText(info);
+                        });
+                }
+
+                if (!menu.isEmpty())
+                {
+                    menu.exec(mouseEvent->globalPosition().toPoint());
+                }
+                return true;
+            }
+        }
+    }
+    return QWidget::eventFilter(obj, event);
 }
 
 // Widget override: the dialog is closing -> end/shutdown
@@ -2292,6 +2461,10 @@ void MainDlg::OnOptions()
     const auto audioDevice      = VariantValue::Key("AudioDevice").TryGet<string>(m_config).value_or("default"s);
     const auto logToFile        = VariantValue::Key("DebugLogFile").TryGet<bool>(m_config).value_or(false);
     const auto noMediaControl   = VariantValue::Key("NoMediaControl").TryGet<bool>(m_config).value_or(false);
+#ifdef Q_OS_WIN
+    const auto audioBackendStr  = VariantValue::Key("AudioBackend").TryGet<string>(m_config).value_or("waveout"s);
+    const auto audioBackend     = AudioBackendFromString(audioBackendStr);
+#endif
 
     QPointer<QDialog> dlg = new QDialog(this);
 
@@ -2312,7 +2485,7 @@ void MainDlg::OnOptions()
     bufferingSlider->setValue(buffering);
 
     QPointer<QLabel> bufferingValue = new QLabel;
-    
+
     bufferingValue->setText((to_string(buffering) + " ms"s).c_str());
 
     dlg->connect(bufferingSlider, &QSlider::valueChanged, [&bufferingValue](int v)
@@ -2330,32 +2503,52 @@ void MainDlg::OnOptions()
 
     QPointer<QComboBox> soundDeviceDropList = new QComboBox;
 
-    auto soundDevices = AlsaAudio::ListDevices();
-    soundDevices["default"s] = GetString(StringID::LABEL_DEFAULT_DEVICE).toStdString();
-
-    int idx = 0;
-    int currentIdx = -1;
-    int defaultIdx = 0;
-
-    for (const auto& device : soundDevices)
+    // Helper lambda to populate device list for a given backend
+    auto populateDeviceList = [&](QComboBox* combo, const string& selectedDevice
+#ifdef Q_OS_WIN
+        , AudioBackend backend
+#endif
+    )
     {
-        soundDeviceDropList->addItem(device.second.c_str(), device.first.c_str());
+        combo->clear();
 
-        if (device.first == audioDevice)
+#ifdef Q_OS_WIN
+        auto soundDevices = AlsaAudio::ListDevices(backend);
+#else
+        auto soundDevices = AlsaAudio::ListDevices();
+#endif
+        soundDevices["default"s] = GetString(StringID::LABEL_DEFAULT_DEVICE).toStdString();
+
+        int idx = 0;
+        int currentIdx = -1;
+        int defaultIdx = 0;
+
+        for (const auto& device : soundDevices)
         {
-            currentIdx = idx;
+            combo->addItem(device.second.c_str(), device.first.c_str());
+
+            if (device.first == selectedDevice)
+            {
+                currentIdx = idx;
+            }
+            if (device.first == "default"s)
+            {
+                defaultIdx = idx;
+            }
+            ++idx;
         }
-        if (device.first == "default"s)
+        if (currentIdx < 0)
         {
-            defaultIdx = idx;
+            currentIdx = defaultIdx;
         }
-        ++idx;
-    }
-    if (currentIdx < 0)
-    {
-        currentIdx = defaultIdx;
-    }
-    soundDeviceDropList->setCurrentIndex(currentIdx);
+        combo->setCurrentIndex(currentIdx);
+    };
+
+#ifdef Q_OS_WIN
+    populateDeviceList(soundDeviceDropList, audioDevice, audioBackend);
+#else
+    populateDeviceList(soundDeviceDropList, audioDevice);
+#endif
 
     QPointer<QHBoxLayout> soundDeviceLayout = new QHBoxLayout(dlg);
 
@@ -2363,6 +2556,39 @@ void MainDlg::OnOptions()
 
     QPointer<QGroupBox> soundDeviceGroup = new QGroupBox(GetString(StringID::LABEL_SOUND_DEVICE));
     soundDeviceGroup->setLayout(soundDeviceLayout);
+
+#ifdef Q_OS_WIN
+    // Audio backend selector (Windows only)
+    QPointer<QComboBox> backendDropList = new QComboBox;
+
+    backendDropList->addItem("Windows Audio (waveOut)", "waveout");
+    backendDropList->addItem("WASAPI Exclusive", "wasapi");
+    backendDropList->addItem("ASIO", "asio");
+
+    for (int i = 0; i < backendDropList->count(); ++i)
+    {
+        if (backendDropList->itemData(i).toString().toStdString() == audioBackendStr)
+        {
+            backendDropList->setCurrentIndex(i);
+            break;
+        }
+    }
+
+    // Refresh device list when backend changes
+    dlg->connect(backendDropList, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        [&soundDeviceDropList, &backendDropList, &populateDeviceList](int)
+        {
+            const auto backendStr = backendDropList->currentData().toString().toStdString();
+            const auto backend = AudioBackendFromString(backendStr);
+            populateDeviceList(soundDeviceDropList, "default", backend);
+        });
+
+    QPointer<QHBoxLayout> backendLayout = new QHBoxLayout(dlg);
+    backendLayout->addWidget(backendDropList);
+
+    QPointer<QGroupBox> backendGroup = new QGroupBox(GetString(StringID::LABEL_AUDIO_BACKEND));
+    backendGroup->setLayout(backendLayout);
+#endif
 
     QPointer<QCheckBox> logToFileOption = new QCheckBox(GetString(StringID::LABEL_LOG_TO_FILE));
     logToFileOption->setCheckState(logToFile ? Qt::CheckState::Checked : Qt::CheckState::Unchecked);
@@ -2373,6 +2599,9 @@ void MainDlg::OnOptions()
     QPointer<QVBoxLayout> mainLayout = new QVBoxLayout(dlg);
 
     mainLayout->addWidget(bufferingGroup);
+#ifdef Q_OS_WIN
+    mainLayout->addWidget(backendGroup);
+#endif
     mainLayout->addWidget(soundDeviceGroup);
     mainLayout->addWidget(logToFileOption);
     mainLayout->addWidget(mediaControlOption);
@@ -2386,6 +2615,9 @@ void MainDlg::OnOptions()
         const string newAudioDevice     = soundDeviceDropList->currentData().toString().toStdString();
         const bool newLogToFile         = logToFileOption->checkState() == Qt::CheckState::Checked;
         const bool newNoMediaControl    = mediaControlOption->checkState() == Qt::CheckState::Checked;
+#ifdef Q_OS_WIN
+        const string newAudioBackend    = backendDropList->currentData().toString().toStdString();
+#endif
 
         if (newNoMediaControl != noMediaControl)
         {
@@ -2397,6 +2629,17 @@ void MainDlg::OnOptions()
             VariantValue::Key("DebugLogFile").Set(m_config, newLogToFile);
             EnableLogToFile(newLogToFile, LOG_FILE_NAME);
         }
+#ifdef Q_OS_WIN
+        if (newBuffering != buffering || newAudioDevice != audioDevice || newAudioBackend != audioBackendStr)
+        {
+            VariantValue::Key("StartFill").Set(m_config, newBuffering);
+            VariantValue::Key("AudioDevice").Set(m_config, newAudioDevice);
+            VariantValue::Key("AudioBackend").Set(m_config, newAudioBackend);
+
+            // restart the RAOP service
+            emit ShowMessage(StringID::RECONFIG_RAOP_SERVICE);
+        }
+#else
         if (newBuffering != buffering || newAudioDevice != audioDevice)
         {
             VariantValue::Key("StartFill").Set(m_config, newBuffering);
@@ -2405,6 +2648,7 @@ void MainDlg::OnOptions()
             // restart the RAOP service
             emit ShowMessage(StringID::RECONFIG_RAOP_SERVICE);
         }
+#endif
     }
     else
     {

@@ -120,6 +120,9 @@ namespace Localization::Spanish
 		case StringID::LABEL_SOUND_DEVICE:
 			return "Dispositivo de Sonido"s;
 
+		case StringID::LABEL_AUDIO_BACKEND:
+			return "Salida de audio"s;
+
 		case StringID::LABEL_LOG_TO_FILE:
 			return "Guardar registros en archivo"s;
 

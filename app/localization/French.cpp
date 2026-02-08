@@ -120,6 +120,9 @@ namespace Localization::French
 		case StringID::LABEL_SOUND_DEVICE:
 			return "P\xC3\xA9riph\xC3\xA9rique audio"s;
 
+		case StringID::LABEL_AUDIO_BACKEND:
+			return "Sortie audio"s;
+
 		case StringID::LABEL_LOG_TO_FILE:
 			return "Journaliser dans un fichier"s;
 

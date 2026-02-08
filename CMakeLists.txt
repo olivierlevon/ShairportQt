@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.15.0)
-project(ShairportQt VERSION 1.0.0.5 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.20.0)
+project(ShairportQt VERSION 1.0.0.5 LANGUAGES CXX C)
 
 if (APPLE)
     enable_language(OBJCXX)
@@ -32,7 +32,7 @@ set(LIBRARY_SOURCES lib/dnssd.cpp lib/RaopServer.cpp lib/LayerCake.cpp lib/base6
         lib/DmapParser.cpp lib/KeyboardHook.cpp lib/MediaIntegration.cpp)
 
 if (MSVC)
-    list(APPEND LIBRARY_SOURCES lib/SmtcIntegration.cpp)
+    list(APPEND LIBRARY_SOURCES lib/SmtcIntegration.cpp lib/audio/WasapiPlayer.cpp lib/audio/AsioPlayer.cpp)
 endif()
 if (UNIX AND NOT APPLE)
     list(APPEND LIBRARY_SOURCES lib/MprisIntegration.cpp)
@@ -55,6 +55,14 @@ target_include_directories(ShairLib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/inc")
 target_include_directories(ShairLib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/lib/Bonjour")
 target_link_libraries(ShairLib PRIVATE spdlog::spdlog Sockpp::sockpp-static)
 if (MSVC)
+    # cwASIO: clean-room ASIO SDK reimplementation (MIT license)
+    include(FetchContent)
+    FetchContent_Declare(cwASIO
+        GIT_REPOSITORY https://github.com/s13n/cwASIO.git
+        GIT_TAG main
+    )
+    FetchContent_MakeAvailable(cwASIO)
+    target_link_libraries(ShairLib PRIVATE cwASIO::lib)
     target_link_libraries(ShairLib PRIVATE windowsapp.lib)
 endif()
 if (UNIX AND NOT APPLE)

@@ -121,6 +121,9 @@ namespace Localization::English
 		case StringID::LABEL_SOUND_DEVICE:
 			return "Sound Device"s;
 
+		case StringID::LABEL_AUDIO_BACKEND:
+			return "Audio Backend"s;
+
 		case StringID::LABEL_LOG_TO_FILE:
 			return "Log to file"s;
 

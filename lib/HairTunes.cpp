@@ -6,6 +6,9 @@
 #include <math.h>
 #include "audio/PlaySound.h"
 #include "audio/WaveHeader.h"
+#ifdef _WIN32
+#include "audio/AudioBackend.h"
+#endif
 #include "SuspendInhibitor.h"
 
 using namespace std;
@@ -386,8 +389,14 @@ void HairTunes::RunQueue() noexcept
     // start fill in [ms]
     const size_t msStartFill = VariantValue::Key("StartFill").Get<size_t>(m_config);
     const auto audioDevice = VariantValue::Key("AudioDevice").TryGet<string>(m_config).value_or("default"s);
-
+#ifdef _WIN32
+    const auto audioBackend = AudioBackendFromString(
+        VariantValue::Key("AudioBackend").TryGet<string>(m_config).value_or("waveout"s));
+    spdlog::debug("starting Hairtunes with a buffer of {} ms, backend \"{}\", output to \"{}\"",
+        msStartFill, AudioBackendToString(audioBackend), audioDevice);
+#else
     spdlog::debug("starting Hairtunes with a buffer of {} ms and output to \"{}\"", msStartFill, audioDevice);
+#endif
 
     const VariantValue::Key keyVolume("Volume");
 
@@ -562,7 +571,11 @@ void HairTunes::RunQueue() noexcept
                     ((sizeStreamPCM > ((msStartFill * m_samplingRate * SAMPLE_FACTOR) / 1000)) || m_stopThread))
                 {
                     // start playing after the sound buffer had been filled
+#ifdef _WIN32
+                    playAudio = AlsaAudio::Play(streamPCM, audioDevice, audioBackend);
+#else
                     playAudio = AlsaAudio::Play(streamPCM, audioDevice);
+#endif
                 }
             }
             catch(...)

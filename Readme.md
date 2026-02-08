@@ -223,9 +223,29 @@ Localization: English, German, Japanese, Spanish, Catalan, French, Italian.
 
 </p>
 
+### Audio Backends (Windows)
+
+ShairportQt on Windows supports three audio output backends, selectable from the Advanced Options dialog:
+
+| Backend | Description |
+|---------|-------------|
+| **Windows Audio (waveOut)** | Default. Routes audio through the Windows audio mixer (shared mode). Compatible with all devices. |
+| **WASAPI Exclusive** | Bypasses the Windows audio mixer for lower latency and bit-perfect output. Locks the device exclusively — other applications cannot use it simultaneously. |
+| **ASIO** | Professional audio interface protocol via [cwASIO](https://github.com/s13n/cwASIO) (MIT). Lowest latency, ideal for dedicated audio hardware. Requires an ASIO-compatible driver (e.g. ASIO4ALL, native ASIO drivers). |
+
+On Linux, audio is always output via ALSA.
+
 ### Usage Hints
 
 Click on the time marker to the right of the progress bar to toggle between different display modes.
+Hover over it to see whether it currently shows "time left" or "total time".
+
+The pushpin icon in the top-right corner of the menu bar toggles "always on top" mode,
+keeping the ShairportQt window above other windows.
+
+Right-click on the artist, track, or album labels to copy the information to the clipboard.
+Left-click on the artist label to search on Wikipedia (in the current interface language),
+or click on the song/album labels to search on Spotify.
 
 ShairportQt offers a tray icon which may be
 disabled. If the function `Show "Now Playing" in Tray` is switched on, title information will only appear in
